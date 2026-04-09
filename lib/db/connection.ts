@@ -1,28 +1,23 @@
-import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
+import { createClient, type Client } from "@libsql/client";
 
-const DB_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "semfaz.db");
+let client: Client | null = null;
 
-let db: Database.Database | null = null;
+export function getDb(): Client {
+  if (client) return client;
 
-export function getDb(): Database.Database {
-  if (db) return db;
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
 
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+  if (!url) {
+    throw new Error(
+      "TURSO_DATABASE_URL não configurada. Configure as variáveis de ambiente.",
+    );
   }
 
-  db = new Database(DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma("cache_size = -64000"); // 64MB cache
-  db.pragma("foreign_keys = ON");
+  client = createClient({
+    url,
+    authToken,
+  });
 
-  return db;
-}
-
-export function getDbPath(): string {
-  return DB_PATH;
+  return client;
 }

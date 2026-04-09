@@ -4,12 +4,9 @@ import { parseReceitaCsvFromBuffer } from "@/lib/parsers/csv-receitas";
 import { parseRreoXlsFromBuffer } from "@/lib/parsers/xls-rreo";
 import { parseRgfXlsFromBuffer } from "@/lib/parsers/xls-rgf";
 import { upsertExercicio, insertReceitas, insertRreo, insertRgf, recordUpload, updateUploadStatus } from "@/lib/db/queries";
-import { ensureSeeded } from "@/lib/db/seed";
 
 export async function POST(request: NextRequest) {
   try {
-    ensureSeeded();
-
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -32,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const uploadId = recordUpload(file.name, detected.type, detected.year, detected.period?.toString());
+    const uploadId = await recordUpload(file.name, detected.type, detected.year, detected.period?.toString());
 
     try {
       let count = 0;
@@ -40,8 +37,8 @@ export async function POST(request: NextRequest) {
       switch (detected.type) {
         case "receita_csv": {
           const rows = parseReceitaCsvFromBuffer(buffer);
-          upsertExercicio(detected.year, "receita");
-          count = insertReceitas(detected.year, rows);
+          await upsertExercicio(detected.year, "receita");
+          count = await insertReceitas(detected.year, rows);
           break;
         }
         case "rreo_xls": {
@@ -49,8 +46,8 @@ export async function POST(request: NextRequest) {
             throw new Error("Bimestre não detectado no nome do arquivo");
           }
           const rows = parseRreoXlsFromBuffer(buffer);
-          upsertExercicio(detected.year, "rreo");
-          count = insertRreo(detected.year, detected.period, rows);
+          await upsertExercicio(detected.year, "rreo");
+          count = await insertRreo(detected.year, detected.period, rows);
           break;
         }
         case "rgf_xls": {
@@ -58,13 +55,13 @@ export async function POST(request: NextRequest) {
             throw new Error("Quadrimestre não detectado no nome do arquivo");
           }
           const rows = parseRgfXlsFromBuffer(buffer);
-          upsertExercicio(detected.year, "rgf");
-          count = insertRgf(detected.year, detected.period, detected.entity || "prefeitura", rows);
+          await upsertExercicio(detected.year, "rgf");
+          count = await insertRgf(detected.year, detected.period, detected.entity || "prefeitura", rows);
           break;
         }
       }
 
-      updateUploadStatus(uploadId as number, "concluido", count);
+      await updateUploadStatus(uploadId, "concluido", count);
 
       return NextResponse.json({
         success: true,
@@ -79,7 +76,7 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch (err) {
-      updateUploadStatus(uploadId as number, "erro", 0, String(err));
+      await updateUploadStatus(uploadId, "erro", 0, String(err));
       throw err;
     }
   } catch (error) {

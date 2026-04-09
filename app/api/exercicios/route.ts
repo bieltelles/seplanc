@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
 import { getExerciciosWithDetails, getUploadHistory, getAvailableYears } from "@/lib/db/queries";
-import { ensureSeeded } from "@/lib/db/seed";
 
 export async function GET() {
   try {
-    ensureSeeded();
-
-    const exercicios = getExerciciosWithDetails();
-    const uploads = getUploadHistory();
-    const anos = getAvailableYears();
+    const exercicios = await getExerciciosWithDetails();
+    const uploads = await getUploadHistory();
+    const anos = await getAvailableYears();
 
     return NextResponse.json({
       exercicios,

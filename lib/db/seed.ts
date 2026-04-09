@@ -9,9 +9,9 @@ import { detectFileType } from "@/lib/parsers/detect-file-type";
 
 const ROOT = process.cwd();
 
-export function seedDatabase() {
+export async function seedDatabase() {
   console.log("Inicializando schema...");
-  initializeSchema();
+  await initializeSchema();
 
   // 1. Seed receitas CSVs
   const receitasDir = path.join(ROOT, "arquivos", "receitas");
@@ -45,8 +45,8 @@ export function seedDatabase() {
     console.log(`  Processando ${filename}...`);
     try {
       const rows = parseReceitaCsv(csvPath);
-      upsertExercicio(year, "receita");
-      const count = insertReceitas(year, rows);
+      await upsertExercicio(year, "receita");
+      const count = await insertReceitas(year, rows);
       console.log(`    → ${count} registros inseridos para ${year}`);
     } catch (err) {
       console.error(`    Erro ao processar ${filename}:`, err);
@@ -71,8 +71,8 @@ export function seedDatabase() {
       console.log(`  Processando ${xlsFile}...`);
       try {
         const rows = parseRreoXls(filePath);
-        upsertExercicio(detected.year, "rreo");
-        const count = insertRreo(detected.year, detected.period, rows);
+        await upsertExercicio(detected.year, "rreo");
+        const count = await insertRreo(detected.year, detected.period, rows);
         console.log(`    → ${count} registros inseridos`);
       } catch (err) {
         console.error(`    Erro ao processar ${xlsFile}:`, err);
@@ -98,8 +98,8 @@ export function seedDatabase() {
       console.log(`  Processando ${xlsFile}...`);
       try {
         const rows = parseRgfXls(filePath);
-        upsertExercicio(detected.year, "rgf");
-        const count = insertRgf(detected.year, detected.period, detected.entity || "prefeitura", rows);
+        await upsertExercicio(detected.year, "rgf");
+        const count = await insertRgf(detected.year, detected.period, detected.entity || "prefeitura", rows);
         console.log(`    → ${count} registros inseridos`);
       } catch (err) {
         console.error(`    Erro ao processar ${xlsFile}:`, err);
@@ -110,14 +110,15 @@ export function seedDatabase() {
   console.log("\nSeed concluído!");
 }
 
-// Auto-seed on API startup if database is empty
-export function ensureSeeded() {
-  const { getDb } = require("./connection");
-  initializeSchema();
+// Check if database is empty and seed if needed
+export async function ensureSeeded() {
+  await initializeSchema();
+  const { getDb } = await import("./connection");
   const db = getDb();
-  const count = db.prepare("SELECT COUNT(*) as c FROM receitas").get() as { c: number };
+  const result = await db.execute("SELECT COUNT(*) as c FROM receitas");
+  const count = result.rows[0] as unknown as { c: number };
   if (count.c === 0) {
     console.log("Banco vazio, executando seed...");
-    seedDatabase();
+    await seedDatabase();
   }
 }

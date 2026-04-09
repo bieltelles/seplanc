@@ -1,10 +1,10 @@
 import { getDb } from "./connection";
 
-export function initializeSchema() {
+export async function initializeSchema() {
   const db = getDb();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS exercicios (
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS exercicios (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ano INTEGER NOT NULL,
       tipo TEXT NOT NULL DEFAULT 'receita',
@@ -12,9 +12,9 @@ export function initializeSchema() {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       UNIQUE(ano, tipo)
-    );
+    )`,
 
-    CREATE TABLE IF NOT EXISTS receitas (
+    `CREATE TABLE IF NOT EXISTS receitas (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       exercicio_ano INTEGER NOT NULL,
       rubrica TEXT,
@@ -39,14 +39,14 @@ export function initializeSchema() {
       dezembro REAL DEFAULT 0,
       acumulado REAL DEFAULT 0,
       categoria_tributaria TEXT
-    );
+    )`,
 
-    CREATE INDEX IF NOT EXISTS idx_receitas_ano ON receitas(exercicio_ano);
-    CREATE INDEX IF NOT EXISTS idx_receitas_classificacao ON receitas(classificacao);
-    CREATE INDEX IF NOT EXISTS idx_receitas_categoria ON receitas(categoria_tributaria);
-    CREATE INDEX IF NOT EXISTS idx_receitas_header ON receitas(is_header);
+    `CREATE INDEX IF NOT EXISTS idx_receitas_ano ON receitas(exercicio_ano)`,
+    `CREATE INDEX IF NOT EXISTS idx_receitas_classificacao ON receitas(classificacao)`,
+    `CREATE INDEX IF NOT EXISTS idx_receitas_categoria ON receitas(categoria_tributaria)`,
+    `CREATE INDEX IF NOT EXISTS idx_receitas_header ON receitas(is_header)`,
 
-    CREATE TABLE IF NOT EXISTS rreo (
+    `CREATE TABLE IF NOT EXISTS rreo (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       exercicio_ano INTEGER NOT NULL,
       bimestre INTEGER NOT NULL,
@@ -55,12 +55,12 @@ export function initializeSchema() {
       coluna TEXT,
       valor TEXT,
       valor_numerico REAL
-    );
+    )`,
 
-    CREATE INDEX IF NOT EXISTS idx_rreo_ano_bim ON rreo(exercicio_ano, bimestre);
-    CREATE INDEX IF NOT EXISTS idx_rreo_anexo ON rreo(anexo);
+    `CREATE INDEX IF NOT EXISTS idx_rreo_ano_bim ON rreo(exercicio_ano, bimestre)`,
+    `CREATE INDEX IF NOT EXISTS idx_rreo_anexo ON rreo(anexo)`,
 
-    CREATE TABLE IF NOT EXISTS rgf (
+    `CREATE TABLE IF NOT EXISTS rgf (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       exercicio_ano INTEGER NOT NULL,
       quadrimestre INTEGER NOT NULL,
@@ -70,12 +70,12 @@ export function initializeSchema() {
       coluna TEXT,
       valor TEXT,
       valor_numerico REAL
-    );
+    )`,
 
-    CREATE INDEX IF NOT EXISTS idx_rgf_ano_quad ON rgf(exercicio_ano, quadrimestre);
-    CREATE INDEX IF NOT EXISTS idx_rgf_entidade ON rgf(entidade);
+    `CREATE INDEX IF NOT EXISTS idx_rgf_ano_quad ON rgf(exercicio_ano, quadrimestre)`,
+    `CREATE INDEX IF NOT EXISTS idx_rgf_entidade ON rgf(entidade)`,
 
-    CREATE TABLE IF NOT EXISTS uploads (
+    `CREATE TABLE IF NOT EXISTS uploads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       filename TEXT NOT NULL,
       file_type TEXT NOT NULL,
@@ -85,6 +85,10 @@ export function initializeSchema() {
       registros_inseridos INTEGER DEFAULT 0,
       erro_mensagem TEXT,
       created_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
+    )`,
+  ];
+
+  for (const sql of statements) {
+    await db.execute(sql);
+  }
 }

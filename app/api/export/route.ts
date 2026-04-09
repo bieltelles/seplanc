@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReceitasFiltered, getAvailableYears } from "@/lib/db/queries";
-import { ensureSeeded } from "@/lib/db/seed";
 import { MONTHS } from "@/lib/utils/format";
 
 export async function GET(request: NextRequest) {
   try {
-    ensureSeeded();
-
     const searchParams = request.nextUrl.searchParams;
     const anosParam = searchParams.get("anos");
     const categoria = searchParams.get("categoria");
 
-    const availableYears = getAvailableYears().map((y) => y.ano);
+    const availableYears = (await getAvailableYears()).map((y) => y.ano);
     const anos = anosParam
       ? anosParam.split(",").map(Number).filter((n) => !isNaN(n))
       : availableYears;
 
-    const data = getReceitasFiltered({
+    const data = await getReceitasFiltered({
       anos,
       categoria: categoria || undefined,
       apenasDetalhes: true,
