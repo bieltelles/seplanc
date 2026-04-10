@@ -5,6 +5,8 @@ export type TaxCategory =
   | "ISS"
   | "TAXAS"
   | "CONTRIBUICOES"
+  | "CONTRIBUICOES_SOCIAIS"
+  | "CONTRIBUICAO_ILUMINACAO"
   | "TRANSFERENCIAS"
   | "RECEITA_PATRIMONIAL"
   | "RECEITA_SERVICOS"
@@ -18,7 +20,9 @@ export const TAX_CATEGORY_LABELS: Record<TaxCategory, string> = {
   IR: "Imposto de Renda",
   ISS: "ISS/ISSQN",
   TAXAS: "Taxas",
-  CONTRIBUICOES: "Contribuições",
+  CONTRIBUICOES: "Contribuições (total)",
+  CONTRIBUICOES_SOCIAIS: "Contribuições Sociais",
+  CONTRIBUICAO_ILUMINACAO: "Iluminação Pública (COSIP)",
   TRANSFERENCIAS: "Transferências",
   RECEITA_PATRIMONIAL: "Receita Patrimonial",
   RECEITA_SERVICOS: "Receita de Serviços",
@@ -34,6 +38,8 @@ export const TAX_CATEGORY_COLORS: Record<TaxCategory, string> = {
   ISS: "#0ea5e9",
   TAXAS: "#14b8a6",
   CONTRIBUICOES: "#8b5cf6",
+  CONTRIBUICOES_SOCIAIS: "#7c3aed",
+  CONTRIBUICAO_ILUMINACAO: "#a78bfa",
   TRANSFERENCIAS: "#f59e0b",
   RECEITA_PATRIMONIAL: "#10b981",
   RECEITA_SERVICOS: "#ec4899",
@@ -41,6 +47,29 @@ export const TAX_CATEGORY_COLORS: Record<TaxCategory, string> = {
   DEDUCOES: "#ef4444",
   OUTROS: "#94a3b8",
 };
+
+/**
+ * Sentinela "Contribuições" no filtro = união de todas as contribuições.
+ * Ao filtrar por `CONTRIBUICOES`, o backend expande para todas as categorias
+ * deste grupo (Sociais + COSIP + catch-all genérica). Já as chaves específicas
+ * `CONTRIBUICOES_SOCIAIS` e `CONTRIBUICAO_ILUMINACAO` filtram apenas cada
+ * subcategoria.
+ */
+export const CONTRIBUICOES_GROUP: readonly TaxCategory[] = [
+  "CONTRIBUICOES",
+  "CONTRIBUICOES_SOCIAIS",
+  "CONTRIBUICAO_ILUMINACAO",
+] as const;
+
+/**
+ * Expande um valor de filtro para a lista de categorias que o backend deve
+ * considerar. Para categorias normais, retorna `[cat]`. Para o umbrella
+ * `CONTRIBUICOES`, retorna o grupo completo.
+ */
+export function expandCategoriaFilter(cat: string): string[] {
+  if (cat === "CONTRIBUICOES") return [...CONTRIBUICOES_GROUP];
+  return [cat];
+}
 
 /**
  * Classifica um código de receita na categoria tributária correspondente.
@@ -52,6 +81,8 @@ export const TAX_CATEGORY_COLORS: Record<TaxCategory, string> = {
  *   - 1112040000 → IR  (Renda e Proventos, retido na fonte)
  *   - 1112080000 → ITBI (Transmissão Intervivos)
  *   - 1113050000 → ISS/ISSQN (Serviços de Qualquer Natureza)
+ *   - 1210xxxxxx → Contribuições Sociais (RPPS, Outras Contribuições Sociais)
+ *   - 1230xxxxxx → COSIP - Iluminação Pública
  *
  * - **Formato intermediário (11 dígitos, 2018-2021)** — prefixo `11180`
  *   - 11180110000 → IPTU
@@ -64,6 +95,10 @@ export const TAX_CATEGORY_COLORS: Record<TaxCategory, string> = {
  *   - 111253            → ITBI
  *   - 11130              → IR
  *   - 11140 / 11145      → ISS
+ *
+ * - **Contribuições (11 dígitos, 2018+)**
+ *   - 121xxxxxxxx → Contribuições Sociais (RPPS, Outras)
+ *   - 124xxxxxxxx → COSIP - Iluminação Pública
  */
 export function classifyRevenue(classificacao: string): TaxCategory {
   const code = classificacao.trim();
@@ -87,7 +122,12 @@ export function classifyRevenue(classificacao: string): TaxCategory {
     if (code.startsWith("11130")) return "IR";
 
     if (code.startsWith("112")) return "TAXAS";
+
+    // Contribuições (subcategorias)
+    if (code.startsWith("121")) return "CONTRIBUICOES_SOCIAIS";
+    if (code.startsWith("124")) return "CONTRIBUICAO_ILUMINACAO";
     if (code.startsWith("12") || code.startsWith("14")) return "CONTRIBUICOES";
+
     if (code.startsWith("13")) return "RECEITA_PATRIMONIAL";
     if (code.startsWith("16")) return "RECEITA_SERVICOS";
     if (code.startsWith("17")) return "TRANSFERENCIAS";
@@ -101,7 +141,12 @@ export function classifyRevenue(classificacao: string): TaxCategory {
     if (code.startsWith("111204")) return "IR";
     if (code.startsWith("111305") || code.startsWith("111300")) return "ISS";
     if (code.startsWith("112")) return "TAXAS";
+
+    // Contribuições (subcategorias)
+    if (code.startsWith("1210")) return "CONTRIBUICOES_SOCIAIS";
+    if (code.startsWith("1230")) return "CONTRIBUICAO_ILUMINACAO";
     if (code.startsWith("12") || code.startsWith("14")) return "CONTRIBUICOES";
+
     if (code.startsWith("13")) return "RECEITA_PATRIMONIAL";
     if (code.startsWith("16")) return "RECEITA_SERVICOS";
     if (code.startsWith("17")) return "TRANSFERENCIAS";

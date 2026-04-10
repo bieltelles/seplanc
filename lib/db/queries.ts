@@ -5,6 +5,7 @@ import type { ReceitaRow } from "@/lib/parsers/csv-receitas";
 import type { RreoRow } from "@/lib/parsers/xls-rreo";
 import type { RgfRow } from "@/lib/parsers/xls-rgf";
 import type { CorrectionContext } from "@/lib/ipca/context";
+import { expandCategoriaFilter } from "@/lib/constants/tax-categories";
 import {
   correctMonthlyRow,
   correctMonthlyValue,
@@ -187,8 +188,14 @@ export async function getReceitasFiltered(
     binds.push(...params.anos);
   }
   if (params.categoria) {
-    sql += " AND categoria_tributaria = ?";
-    binds.push(params.categoria);
+    const cats = expandCategoriaFilter(params.categoria);
+    if (cats.length === 1) {
+      sql += " AND categoria_tributaria = ?";
+      binds.push(cats[0]);
+    } else {
+      sql += ` AND categoria_tributaria IN (${cats.map(() => "?").join(",")})`;
+      binds.push(...cats);
+    }
   }
   if (params.apenasDetalhes) {
     sql += " AND is_header = 0";
@@ -367,6 +374,8 @@ export async function getCategoryByMonth(
 ) {
   await ensureSchema();
   const db = getDb();
+  const cats = expandCategoriaFilter(categoria);
+  const catPlaceholders = cats.map(() => "?").join(",");
   const result = await db.execute({
     sql: `SELECT
       SUM(janeiro) as janeiro, SUM(fevereiro) as fevereiro,
@@ -377,8 +386,8 @@ export async function getCategoryByMonth(
       SUM(novembro) as novembro, SUM(dezembro) as dezembro,
       SUM(acumulado) as acumulado, SUM(orcado) as orcado
     FROM receitas
-    WHERE exercicio_ano = ? AND categoria_tributaria = ? AND is_header = 0`,
-    args: [ano, categoria],
+    WHERE exercicio_ano = ? AND categoria_tributaria IN (${catPlaceholders}) AND is_header = 0`,
+    args: [ano, ...cats],
   });
   const row = result.rows[0] as unknown as Record<string, number> | undefined;
   if (!row) return undefined;

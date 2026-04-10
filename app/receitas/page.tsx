@@ -7,7 +7,13 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LoadingSpinner } from "@/components/shared/loading";
-import { TAX_CATEGORY_LABELS, TAX_CATEGORY_COLORS, type TaxCategory } from "@/lib/constants/tax-categories";
+import {
+  TAX_CATEGORY_LABELS,
+  TAX_CATEGORY_COLORS,
+  CONTRIBUICOES_GROUP,
+  expandCategoriaFilter,
+  type TaxCategory,
+} from "@/lib/constants/tax-categories";
 import { MONTH_LABELS } from "@/lib/utils/format";
 import { useCorrection } from "@/components/providers/correction-provider";
 import {
@@ -379,7 +385,11 @@ export default function ReceitasPage() {
                       </thead>
                       <tbody>
                         {summaryData
-                          .filter((d) => !categoria || d.categoria_tributaria === categoria)
+                          .filter((d) => {
+                            if (!categoria) return true;
+                            const cats = expandCategoriaFilter(categoria);
+                            return cats.includes(d.categoria_tributaria);
+                          })
                           .map((d, i) => {
                             const exec = d.total_orcado > 0
                               ? ((d.total_arrecadado / d.total_orcado) * 100).toFixed(1)
