@@ -161,13 +161,24 @@ export function expandCategoriaFilter(cat: string): string[] {
  *   - 121xxxxxxxx → Contribuições Sociais (RPPS, Outras)
  *   - 124xxxxxxxx → COSIP - Iluminação Pública
  *
- * - **Transferências Correntes - conta 17 (11 dígitos, 2018+)**
+ * - **Transferências Correntes - conta 17 (11 dígitos, 2022+ MCASP)**
  *   - 171151xxxxx → FPM (Cota-Parte do Fundo de Participação dos Municípios)
  *   - 1713xxxxxxx → SUS (Transferências de Recursos do SUS)
  *   - 171xxxxxxxx → Outras transferências da União (FNDE, FNAS, CFEM, etc.)
  *   - 172150xxxxx → ICMS (Cota-Parte do ICMS)
  *   - 172151xxxxx → IPVA (Cota-Parte do IPVA)
  *   - 172xxxxxxxx → Outras transferências do Estado
+ *
+ * - **Transferências Correntes - conta 17 (11 dígitos, 2018-2021)**
+ *   - 1718012xxxx → FPM Cota Mensal
+ *   - 1718013xxxx → FPM 1% Dezembro
+ *   - 1718014xxxx → FPM 1% Julho
+ *   - 171803xxxxx → SUS Bloco Custeio
+ *   - 171804xxxxx → SUS Bloco Investimentos
+ *   - 17180xxxxxx → Outras transferências da União (ITR, CFEM, FEP, IOF-Ouro)
+ *   - 1728011xxxx → ICMS
+ *   - 1728012xxxx → IPVA
+ *   - 17280xxxxxx → Outras transferências do Estado
  *
  * - **Transferências Correntes - conta 17 (10 dígitos, 2013-2017)**
  *   - 17210102xx → FPM
@@ -213,13 +224,33 @@ export function classifyRevenue(classificacao: string): TaxCategory {
     if (code.startsWith("16")) return "RECEITA_SERVICOS";
 
     // Transferências da União (171xxxxxxxx)
+    // ----- 2022+ (MCASP) -----
     if (code.startsWith("171151")) return "TRANSFER_UNIAO_FPM";
     if (code.startsWith("1713")) return "TRANSFER_UNIAO_SUS";
+    // ----- 2018-2021 (prefixo 17180) -----
+    // FPM: cota mensal (1718012), 1% dezembro (1718013), 1% julho (1718014)
+    if (
+      code.startsWith("1718012") ||
+      code.startsWith("1718013") ||
+      code.startsWith("1718014")
+    ) {
+      return "TRANSFER_UNIAO_FPM";
+    }
+    // SUS: Bloco Custeio (171803) + Bloco Investimentos (171804)
+    if (code.startsWith("171803") || code.startsWith("171804")) {
+      return "TRANSFER_UNIAO_SUS";
+    }
+    // Catch-all União
     if (code.startsWith("171")) return "TRANSFER_UNIAO_OUTRAS";
 
     // Transferências do Estado (172xxxxxxxx)
+    // ----- 2022+ (MCASP) -----
     if (code.startsWith("172150")) return "TRANSFER_ESTADO_ICMS";
     if (code.startsWith("172151")) return "TRANSFER_ESTADO_IPVA";
+    // ----- 2018-2021 (prefixo 17280) -----
+    if (code.startsWith("1728011")) return "TRANSFER_ESTADO_ICMS";
+    if (code.startsWith("1728012")) return "TRANSFER_ESTADO_IPVA";
+    // Catch-all Estado
     if (code.startsWith("172")) return "TRANSFER_ESTADO_OUTROS";
 
     // Transferências Correntes — catch-all (cabeçalho 17000000000)
