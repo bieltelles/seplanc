@@ -100,9 +100,27 @@ export default function ConfiguracoesPage() {
     setMessage(null);
     try {
       const res = await fetch("/api/ipca/refresh", { method: "POST" });
-      const json = await res.json();
+      const rawText = await res.text();
+      let json: {
+        error?: string;
+        totalRegistros?: number;
+        ultimoMes?: { mes: number; ano: number };
+      } = {};
+      if (rawText) {
+        try {
+          json = JSON.parse(rawText);
+        } catch {
+          // corpo não é JSON
+        }
+      }
       if (!res.ok) {
-        setMessage({ type: "error", text: json.error || "Erro ao atualizar IPCA" });
+        setMessage({
+          type: "error",
+          text:
+            json.error ||
+            rawText ||
+            `Erro ao atualizar IPCA (HTTP ${res.status} ${res.statusText})`,
+        });
         return;
       }
       setMessage({
@@ -130,11 +148,29 @@ export default function ConfiguracoesPage() {
           correcao_ano_base_padrao: String(anoBasePadrao),
         }),
       });
-      const json = await res.json();
+
+      // Parse tolerante: algumas rotas de erro no Vercel retornam corpo vazio.
+      const rawText = await res.text();
+      let json: { error?: string; success?: boolean } = {};
+      if (rawText) {
+        try {
+          json = JSON.parse(rawText);
+        } catch {
+          // Corpo não é JSON válido — mantém json vazio e usa rawText no erro.
+        }
+      }
+
       if (!res.ok) {
-        setMessage({ type: "error", text: json.error || "Erro ao salvar" });
+        setMessage({
+          type: "error",
+          text:
+            json.error ||
+            rawText ||
+            `Erro ao salvar (HTTP ${res.status} ${res.statusText})`,
+        });
         return;
       }
+
       setMessage({ type: "success", text: "Configurações salvas com sucesso" });
       await fetchConfig();
     } catch (err) {
