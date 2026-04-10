@@ -46,6 +46,7 @@ const MONTH_NAMES = [
 export default function ConfiguracoesPage() {
   const [configs, setConfigs] = useState<ConfigRow[]>([]);
   const [ipca, setIpca] = useState<IpcaMeta | null>(null);
+  const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,18 +55,35 @@ export default function ConfiguracoesPage() {
   // Valores dos forms
   const [tipoJuros, setTipoJuros] = useState<"compostos" | "simples">("compostos");
   const [padraoAtiva, setPadraoAtiva] = useState(false);
+  const [anoBasePadrao, setAnoBasePadrao] = useState<number>(new Date().getFullYear());
 
   async function fetchConfig() {
     try {
-      const res = await fetch("/api/config");
-      const json = await res.json();
+      const [configRes, exerciciosRes] = await Promise.all([
+        fetch("/api/config"),
+        fetch("/api/exercicios"),
+      ]);
+      const json = await configRes.json();
+      const exJson = await exerciciosRes.json();
+
       const list: ConfigRow[] = json.configuracoes || [];
       setConfigs(list);
       setIpca(json.ipca);
+
+      const anos: number[] = (exJson.anos || [])
+        .filter((n: number) => !Number.isNaN(n))
+        .sort((a: number, b: number) => b - a);
+      setAnosDisponiveis(anos);
+
       const tj = list.find((c) => c.chave === "correcao_tipo_juros")?.valor;
       const pa = list.find((c) => c.chave === "correcao_padrao_ativa")?.valor;
+      const ab = list.find((c) => c.chave === "correcao_ano_base_padrao")?.valor;
       if (tj === "simples" || tj === "compostos") setTipoJuros(tj);
       setPadraoAtiva(pa === "true");
+      if (ab) {
+        const parsed = parseInt(ab, 10);
+        if (!Number.isNaN(parsed)) setAnoBasePadrao(parsed);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -109,6 +127,7 @@ export default function ConfiguracoesPage() {
         body: JSON.stringify({
           correcao_tipo_juros: tipoJuros,
           correcao_padrao_ativa: padraoAtiva ? "true" : "false",
+          correcao_ano_base_padrao: String(anoBasePadrao),
         }),
       });
       const json = await res.json();
@@ -169,14 +188,18 @@ export default function ConfiguracoesPage() {
               <p className="mb-2 font-medium text-slate-700">Como funciona</p>
               <ul className="list-disc space-y-1 pl-5 text-slate-600">
                 <li>
-                  Valores mensais são corrigidos do mês de competência até{" "}
-                  <strong>31/12 do exercício anterior ao corrente</strong>.
+                  O usuário escolhe um <strong>ano pivô</strong> no topo do sistema.
+                  Anos <strong>a partir do pivô</strong> permanecem em valores correntes;
+                  anos <strong>anteriores</strong> são corrigidos para{" "}
+                  <strong>31/12 do ano anterior ao pivô</strong>.
                 </li>
                 <li>
-                  O exercício corrente ({new Date().getFullYear()}) é sempre mantido em valores correntes.
+                  Exemplo: pivô = 2025 → 2025 e 2026 ficam correntes; 2024, 2023, ... são
+                  corrigidos para 31/12/2024.
                 </li>
                 <li>
-                  A correção é ativada/desativada pelo botão no topo de cada página.
+                  A correção é ativada/desativada pelo botão no topo de cada página, e o
+                  pivô é escolhido no seletor ao lado.
                 </li>
                 <li>
                   O cálculo do acumulado (anual) é derivado da soma dos meses já corrigidos.
@@ -214,6 +237,41 @@ export default function ConfiguracoesPage() {
                     fator = 1 + (r₁ + r₂ + ... + rₙ)
                   </div>
                 </button>
+              </div>
+            </div>
+
+            {/* Ano pivô padrão */}
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Ano pivô padrão (data de atualização monetária)
+              </label>
+              <div className="rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={String(anoBasePadrao)}
+                    onChange={(e) => setAnoBasePadrao(parseInt(e.target.value, 10))}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-semfaz-700 focus:outline-none focus:ring-2 focus:ring-semfaz-400"
+                  >
+                    {(anosDisponiveis.length > 0
+                      ? anosDisponiveis
+                      : [new Date().getFullYear(), new Date().getFullYear() - 1]
+                    ).map((ano) => (
+                      <option key={ano} value={ano}>
+                        {ano}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-xs text-slate-600">
+                    A partir de <strong>{anoBasePadrao}</strong>: valores correntes ·
+                    Anos anteriores corrigidos para{" "}
+                    <strong>31/12/{anoBasePadrao - 1}</strong>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Este é o valor padrão aplicado ao abrir o sistema. Cada usuário
+                  pode alterá-lo temporariamente no seletor ao lado do toggle do topo
+                  da página.
+                </p>
               </div>
             </div>
 

@@ -21,6 +21,11 @@ const CONFIG_DEFAULTS: Record<string, { valor: string; descricao: string }> = {
     valor: "IPCA",
     descricao: "Índice oficial utilizado para correção monetária",
   },
+  correcao_ano_base_padrao: {
+    valor: String(new Date().getFullYear()),
+    descricao:
+      "Ano pivô padrão: a partir deste ano os valores ficam correntes; anos anteriores são corrigidos para 31/12 do ano imediatamente anterior",
+  },
 };
 
 async function ensureDefaults() {
@@ -83,6 +88,15 @@ export async function PUT(request: NextRequest) {
         { error: "correcao_padrao_ativa deve ser 'true' ou 'false'" },
         { status: 400 },
       );
+    }
+    if (body.correcao_ano_base_padrao !== undefined) {
+      const n = parseInt(body.correcao_ano_base_padrao, 10);
+      if (Number.isNaN(n) || n < 2000 || n > 2100) {
+        return NextResponse.json(
+          { error: "correcao_ano_base_padrao deve ser um ano válido (2000-2100)" },
+          { status: 400 },
+        );
+      }
     }
 
     for (const [chave, valor] of Object.entries(body)) {

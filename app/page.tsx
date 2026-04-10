@@ -28,38 +28,45 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
-  const { ativa: correcaoAtiva } = useCorrection();
+  const { ativa: correcaoAtiva, anoBase, hydrated } = useCorrection();
   const [data, setData] = useState<DashboardData | null>(null);
   const [anos, setAnos] = useState<number[]>([]);
   const [selectedAno, setSelectedAno] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async (ano?: number, correcao?: boolean) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (ano) params.set("ano", String(ano));
-      if (correcao) params.set("correcao", "1");
-      const res = await fetch(`/api/dashboard?${params}`);
-      const json = await res.json();
-      setData(json.data);
-      setAnos(json.anos || []);
-      setSelectedAno(json.selectedAno || 0);
-    } catch (err) {
-      console.error("Erro ao carregar dashboard:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchData = useCallback(
+    async (ano?: number, correcao?: boolean, pivot?: number) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (ano) params.set("ano", String(ano));
+        if (correcao) {
+          params.set("correcao", "1");
+          if (pivot) params.set("anoBase", String(pivot));
+        }
+        const res = await fetch(`/api/dashboard?${params}`);
+        const json = await res.json();
+        setData(json.data);
+        setAnos(json.anos || []);
+        setSelectedAno(json.selectedAno || 0);
+      } catch (err) {
+        console.error("Erro ao carregar dashboard:", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    fetchData(selectedAno || undefined, correcaoAtiva);
+    if (!hydrated) return;
+    fetchData(selectedAno || undefined, correcaoAtiva, anoBase);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [correcaoAtiva]);
+  }, [correcaoAtiva, anoBase, hydrated]);
 
   const handleAnoChange = (ano: number) => {
     setSelectedAno(ano);
-    fetchData(ano, correcaoAtiva);
+    fetchData(ano, correcaoAtiva, anoBase);
   };
 
   if (loading) {

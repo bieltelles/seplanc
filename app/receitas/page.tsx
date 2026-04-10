@@ -42,7 +42,7 @@ interface MonthlyData {
 }
 
 export default function ReceitasPage() {
-  const { ativa: correcaoAtiva } = useCorrection();
+  const { ativa: correcaoAtiva, anoBase, hydrated } = useCorrection();
   const [anos, setAnos] = useState<number[]>([]);
   const [selectedAnos, setSelectedAnos] = useState<number[]>([]);
   const [categoria, setCategoria] = useState<string>("");
@@ -51,70 +51,87 @@ export default function ReceitasPage() {
   const [summaryData, setSummaryData] = useState<SummaryRow[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
 
-  const fetchSummary = useCallback(async (selAnos: number[], correcao: boolean) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (selAnos.length > 0) params.set("anos", selAnos.join(","));
-      params.set("tipo", "summary");
-      if (correcao) params.set("correcao", "1");
-      const res = await fetch(`/api/receitas?${params}`);
-      const json = await res.json();
-      setSummaryData(json.data || []);
-      setAnos(json.anos || []);
-      if (json.selectedAnos && selAnos.length === 0) {
-        setSelectedAnos(json.selectedAnos);
+  const fetchSummary = useCallback(
+    async (selAnos: number[], correcao: boolean, pivot: number) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (selAnos.length > 0) params.set("anos", selAnos.join(","));
+        params.set("tipo", "summary");
+        if (correcao) {
+          params.set("correcao", "1");
+          params.set("anoBase", String(pivot));
+        }
+        const res = await fetch(`/api/receitas?${params}`);
+        const json = await res.json();
+        setSummaryData(json.data || []);
+        setAnos(json.anos || []);
+        if (json.selectedAnos && selAnos.length === 0) {
+          setSelectedAnos(json.selectedAnos);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
-  const fetchMonthly = useCallback(async (selAnos: number[], cat: string, correcao: boolean) => {
-    if (!cat) return;
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set("anos", selAnos.join(","));
-      params.set("categoria", cat);
-      params.set("tipo", "monthly");
-      if (correcao) params.set("correcao", "1");
-      const res = await fetch(`/api/receitas?${params}`);
-      const json = await res.json();
-      setMonthlyData(json.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchMonthly = useCallback(
+    async (selAnos: number[], cat: string, correcao: boolean, pivot: number) => {
+      if (!cat) return;
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        params.set("anos", selAnos.join(","));
+        params.set("categoria", cat);
+        params.set("tipo", "monthly");
+        if (correcao) {
+          params.set("correcao", "1");
+          params.set("anoBase", String(pivot));
+        }
+        const res = await fetch(`/api/receitas?${params}`);
+        const json = await res.json();
+        setMonthlyData(json.data || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    fetchSummary(selectedAnos, correcaoAtiva);
+    if (!hydrated) return;
+    fetchSummary(selectedAnos, correcaoAtiva, anoBase);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [correcaoAtiva]);
+  }, [correcaoAtiva, anoBase, hydrated]);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (viewMode === "monthly" && categoria && selectedAnos.length > 0) {
-      fetchMonthly(selectedAnos, categoria, correcaoAtiva);
+      fetchMonthly(selectedAnos, categoria, correcaoAtiva, anoBase);
     }
-  }, [viewMode, categoria, selectedAnos, fetchMonthly, correcaoAtiva]);
+  }, [viewMode, categoria, selectedAnos, fetchMonthly, correcaoAtiva, anoBase, hydrated]);
 
   const handleAnoToggle = (ano: number) => {
     const newAnos = selectedAnos.includes(ano)
       ? selectedAnos.filter((a) => a !== ano)
       : [...selectedAnos, ano].sort((a, b) => b - a);
     setSelectedAnos(newAnos);
-    fetchSummary(newAnos, correcaoAtiva);
+    fetchSummary(newAnos, correcaoAtiva, anoBase);
   };
 
   const handleExportCsv = () => {
     const params = new URLSearchParams();
     if (selectedAnos.length > 0) params.set("anos", selectedAnos.join(","));
     if (categoria) params.set("categoria", categoria);
-    if (correcaoAtiva) params.set("correcao", "1");
+    if (correcaoAtiva) {
+      params.set("correcao", "1");
+      params.set("anoBase", String(anoBase));
+    }
     window.open(`/api/export?${params}`, "_blank");
   };
 

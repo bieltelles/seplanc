@@ -9,13 +9,15 @@ export async function GET(request: NextRequest) {
     const anosParam = searchParams.get("anos");
     const categoria = searchParams.get("categoria");
     const correcaoAtiva = searchParams.get("correcao") === "1";
+    const anoBaseParam = searchParams.get("anoBase");
+    const anoBase = anoBaseParam ? parseInt(anoBaseParam, 10) : undefined;
 
     const availableYears = (await getAvailableYears()).map((y) => y.ano);
     const anos = anosParam
       ? anosParam.split(",").map(Number).filter((n) => !isNaN(n))
       : availableYears;
 
-    const ctx = correcaoAtiva ? await loadCorrectionContext() : null;
+    const ctx = correcaoAtiva ? await loadCorrectionContext(anoBase) : null;
 
     const data = (await getReceitasFiltered(
       {
@@ -49,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     const csvContent = csvRows.join("\n");
-    const suffix = ctx ? "_constantes" : "_correntes";
+    const suffix = ctx ? `_constantes_31-12-${ctx.targetYear}` : "_correntes";
 
     return new NextResponse(csvContent, {
       headers: {
