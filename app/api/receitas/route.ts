@@ -11,13 +11,15 @@ export async function GET(request: NextRequest) {
     const categoria = searchParams.get("categoria");
     const tipo = searchParams.get("tipo") || "summary";
     const correcaoAtiva = searchParams.get("correcao") === "1";
+    const anoBaseParam = searchParams.get("anoBase");
+    const anoBase = anoBaseParam ? parseInt(anoBaseParam, 10) : undefined;
 
     const availableYears = (await getAvailableYears()).map((y) => y.ano);
     const anos = anosParam
       ? anosParam.split(",").map(Number).filter((n) => !isNaN(n))
       : availableYears.slice(0, 2);
 
-    const ctx = correcaoAtiva ? await loadCorrectionContext() : null;
+    const ctx = correcaoAtiva ? await loadCorrectionContext(anoBase) : null;
 
     if (tipo === "summary") {
       const data = await getReceitasSummaryByCategory(anos, ctx);

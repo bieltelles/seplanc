@@ -169,14 +169,18 @@ export default function ConfiguracoesPage() {
               <p className="mb-2 font-medium text-slate-700">Como funciona</p>
               <ul className="list-disc space-y-1 pl-5 text-slate-600">
                 <li>
-                  Valores mensais são corrigidos do mês de competência até{" "}
-                  <strong>31/12 do exercício anterior ao corrente</strong>.
+                  O usuário escolhe um <strong>ano pivô</strong> no topo do sistema.
+                  Anos <strong>a partir do pivô</strong> permanecem em valores correntes;
+                  anos <strong>anteriores</strong> são corrigidos para{" "}
+                  <strong>31/12 do ano anterior ao pivô</strong>.
                 </li>
                 <li>
-                  O exercício corrente ({new Date().getFullYear()}) é sempre mantido em valores correntes.
+                  Exemplo: pivô = 2025 → 2025 e 2026 ficam correntes; 2024, 2023, ... são
+                  corrigidos para 31/12/2024.
                 </li>
                 <li>
-                  A correção é ativada/desativada pelo botão no topo de cada página.
+                  A correção é ativada/desativada pelo botão no topo de cada página, e o
+                  pivô é escolhido no seletor ao lado.
                 </li>
                 <li>
                   O cálculo do acumulado (anual) é derivado da soma dos meses já corrigidos.

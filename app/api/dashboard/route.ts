@@ -7,6 +7,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const ano = parseInt(searchParams.get("ano") || "0");
     const correcaoAtiva = searchParams.get("correcao") === "1";
+    const anoBaseParam = searchParams.get("anoBase");
+    const anoBase = anoBaseParam ? parseInt(anoBaseParam, 10) : undefined;
 
     const anos = await getAvailableYears();
 
@@ -17,7 +19,7 @@ export async function GET(request: NextRequest) {
     const selectedAno = ano || anos[0].ano;
     const previousAno = anos.find((a) => a.ano === selectedAno - 1)?.ano;
 
-    const ctx = correcaoAtiva ? await loadCorrectionContext() : null;
+    const ctx = correcaoAtiva ? await loadCorrectionContext(anoBase) : null;
 
     const summary = await getDashboardSummary(selectedAno, ctx);
     const trend = await getYearlyTrend(ctx);

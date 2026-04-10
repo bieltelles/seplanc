@@ -12,22 +12,35 @@ export interface CorrectionContext {
  * Carrega o contexto de correção monetária:
  * - Mapa de índices IPCA mensais
  * - Tipo de juros configurado (compostos ou simples)
- * - Ano corrente e ano-alvo da correção (currentYear - 1)
+ * - Ano pivô (`anoBase`) e ano-alvo da correção (`anoBase - 1`).
  *
- * Retorna null se a correção não deve ser aplicada (ex: sem dados de IPCA no banco).
+ * Semântica do pivô:
+ * - Anos >= anoBase → mantidos em valores correntes.
+ * - Anos <  anoBase → corrigidos para 31/12/(anoBase - 1).
+ *
+ * Se `anoBase` não for fornecido, usa o ano corrente do sistema.
+ * Retorna null se a correção não pode ser aplicada (ex: sem IPCA no banco).
  */
-export async function loadCorrectionContext(): Promise<CorrectionContext | null> {
+export async function loadCorrectionContext(
+  anoBase?: number,
+): Promise<CorrectionContext | null> {
   const ipcaMap = await loadIpcaMap();
   if (ipcaMap.size === 0) return null;
 
   const tipoRaw = (await getConfiguracao("correcao_tipo_juros")) || "compostos";
   const tipoJuros: TipoJuros = tipoRaw === "simples" ? "simples" : "compostos";
-  const currentYear = new Date().getFullYear();
+
+  const pivo =
+    typeof anoBase === "number" && !Number.isNaN(anoBase) && anoBase > 0
+      ? anoBase
+      : new Date().getFullYear();
 
   return {
     ipcaMap,
     tipoJuros,
-    currentYear,
-    targetYear: currentYear - 1,
+    // `currentYear` aqui representa o pivô (anos < currentYear serão corrigidos).
+    // A nomenclatura é mantida para compatibilidade com shouldCorrectYear()/getTargetYear().
+    currentYear: pivo,
+    targetYear: pivo - 1,
   };
 }

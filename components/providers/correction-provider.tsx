@@ -6,22 +6,32 @@ interface CorrectionContextValue {
   ativa: boolean;
   setAtiva: (v: boolean) => void;
   toggle: () => void;
+  anoBase: number;
+  setAnoBase: (ano: number) => void;
   targetYear: number;
+  hydrated: boolean;
 }
 
 const Ctx = createContext<CorrectionContextValue | null>(null);
 
 const STORAGE_KEY = "semfaz-correcao-ativa";
+const STORAGE_KEY_ANO_BASE = "semfaz-correcao-ano-base";
 
 export function CorrectionProvider({ children }: { children: ReactNode }) {
+  const defaultAnoBase = new Date().getFullYear();
   const [ativa, setAtivaState] = useState(false);
+  const [anoBase, setAnoBaseState] = useState<number>(defaultAnoBase);
   const [hydrated, setHydrated] = useState(false);
 
   // Carrega preferência do usuário + default do servidor
   useEffect(() => {
     (async () => {
       try {
-        const local = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+        const local =
+          typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+        const localAnoBase =
+          typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_ANO_BASE) : null;
+
         if (local !== null) {
           setAtivaState(local === "true");
         } else {
@@ -32,6 +42,11 @@ export function CorrectionProvider({ children }: { children: ReactNode }) {
             (c: { chave: string; valor: string }) => c.chave === "correcao_padrao_ativa",
           );
           setAtivaState(padrao?.valor === "true");
+        }
+
+        if (localAnoBase !== null) {
+          const parsed = parseInt(localAnoBase, 10);
+          if (!Number.isNaN(parsed)) setAnoBaseState(parsed);
         }
       } catch {
         // Ignore
@@ -50,11 +65,27 @@ export function CorrectionProvider({ children }: { children: ReactNode }) {
 
   const toggle = useCallback(() => setAtiva(!ativa), [ativa, setAtiva]);
 
-  const currentYear = new Date().getFullYear();
-  const targetYear = currentYear - 1;
+  const setAnoBase = useCallback((ano: number) => {
+    setAnoBaseState(ano);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(STORAGE_KEY_ANO_BASE, String(ano));
+    }
+  }, []);
+
+  const targetYear = anoBase - 1;
 
   return (
-    <Ctx.Provider value={{ ativa: hydrated && ativa, setAtiva, toggle, targetYear }}>
+    <Ctx.Provider
+      value={{
+        ativa: hydrated && ativa,
+        setAtiva,
+        toggle,
+        anoBase,
+        setAnoBase,
+        targetYear,
+        hydrated,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );
