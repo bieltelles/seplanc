@@ -4,6 +4,13 @@ import { initializeSchema } from "./schema";
 import type { ReceitaRow } from "@/lib/parsers/csv-receitas";
 import type { RreoRow } from "@/lib/parsers/xls-rreo";
 import type { RgfRow } from "@/lib/parsers/xls-rgf";
+import type { CorrectionContext } from "@/lib/ipca/context";
+import {
+  correctMonthlyRow,
+  correctMonthlyValue,
+  correctOrcado,
+  shouldCorrectYear,
+} from "@/lib/ipca/correction";
 
 let initialized = false;
 
@@ -110,11 +117,14 @@ export async function getReceitasByYear(ano: number) {
   return result.rows;
 }
 
-export async function getReceitasFiltered(params: {
-  anos?: number[];
-  categoria?: string;
-  apenasDetalhes?: boolean;
-}) {
+export async function getReceitasFiltered(
+  params: {
+    anos?: number[];
+    categoria?: string;
+    apenasDetalhes?: boolean;
+  },
+  ctx?: CorrectionContext | null,
+) {
   await ensureSchema();
   const db = getDb();
   let sql = "SELECT * FROM receitas WHERE 1=1";
@@ -134,26 +144,30 @@ export async function getReceitasFiltered(params: {
 
   sql += " ORDER BY exercicio_ano, id";
   const result = await db.execute({ sql, args: binds });
-  return result.rows;
+  const rows = result.rows as unknown as (Record<string, unknown> & { exercicio_ano: number })[];
+
+  if (!ctx) return rows;
+
+  return rows.map((row) => {
+    if (!shouldCorrectYear(row.exercicio_ano, ctx.currentYear)) return row;
+    const corrected = correctMonthlyRow(row as unknown as Record<string, number>, row.exercicio_ano, ctx.ipcaMap, {
+      tipoJuros: ctx.tipoJuros,
+      currentYear: ctx.currentYear,
+    });
+    return { ...row, ...corrected };
+  });
 }
 
 // ===== Dashboard Aggregations =====
 
-export async function getDashboardSummary(ano: number) {
+const MONTH_COLS = [
+  "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+] as const;
+
+export async function getDashboardSummary(ano: number, ctx?: CorrectionContext | null) {
   await ensureSchema();
   const db = getDb();
-
-  const totalsResult = await db.execute({
-    sql: `SELECT
-      SUM(CASE WHEN is_header = 0 AND is_deducao = 0 THEN orcado ELSE 0 END) as total_orcado,
-      SUM(CASE WHEN is_header = 0 AND is_deducao = 0 THEN acumulado ELSE 0 END) as total_arrecadado,
-      SUM(CASE WHEN is_header = 0 AND is_deducao = 1 THEN acumulado ELSE 0 END) as total_deducoes
-    FROM receitas WHERE exercicio_ano = ? AND is_header = 0`,
-    args: [ano],
-  });
-  const totals = totalsResult.rows[0] as unknown as {
-    total_orcado: number; total_arrecadado: number; total_deducoes: number;
-  } | undefined;
 
   const rcResult = await db.execute({
     sql: `SELECT orcado, acumulado,
@@ -164,10 +178,30 @@ export async function getDashboardSummary(ano: number) {
     LIMIT 1`,
     args: [ano],
   });
-  const receitasCorrentes = rcResult.rows[0] as unknown as Record<string, number> | undefined;
+  const receitasCorrentesRaw = rcResult.rows[0] as unknown as Record<string, number> | undefined;
+
+  const deducoesResult = await db.execute({
+    sql: `SELECT
+      SUM(janeiro) as janeiro, SUM(fevereiro) as fevereiro,
+      SUM(marco) as marco, SUM(abril) as abril,
+      SUM(maio) as maio, SUM(junho) as junho,
+      SUM(julho) as julho, SUM(agosto) as agosto,
+      SUM(setembro) as setembro, SUM(outubro) as outubro,
+      SUM(novembro) as novembro, SUM(dezembro) as dezembro,
+      SUM(acumulado) as acumulado
+    FROM receitas WHERE exercicio_ano = ? AND is_header = 0 AND is_deducao = 1`,
+    args: [ano],
+  });
+  const deducoesRaw = deducoesResult.rows[0] as unknown as Record<string, number> | undefined;
 
   const catResult = await db.execute({
     sql: `SELECT categoria_tributaria,
+      SUM(janeiro) as janeiro, SUM(fevereiro) as fevereiro,
+      SUM(marco) as marco, SUM(abril) as abril,
+      SUM(maio) as maio, SUM(junho) as junho,
+      SUM(julho) as julho, SUM(agosto) as agosto,
+      SUM(setembro) as setembro, SUM(outubro) as outubro,
+      SUM(novembro) as novembro, SUM(dezembro) as dezembro,
       SUM(acumulado) as total,
       SUM(orcado) as orcado_total
     FROM receitas
@@ -176,49 +210,96 @@ export async function getDashboardSummary(ano: number) {
     ORDER BY total DESC`,
     args: [ano],
   });
-  const byCategory = catResult.rows as unknown as {
-    categoria_tributaria: string; total: number; orcado_total: number;
-  }[];
+  const byCategoryRaw = catResult.rows as unknown as (Record<string, number> & {
+    categoria_tributaria: string;
+  })[];
 
-  const months = receitasCorrentes ? [
-    receitasCorrentes.janeiro, receitasCorrentes.fevereiro, receitasCorrentes.marco,
-    receitasCorrentes.abril, receitasCorrentes.maio, receitasCorrentes.junho,
-    receitasCorrentes.julho, receitasCorrentes.agosto, receitasCorrentes.setembro,
-    receitasCorrentes.outubro, receitasCorrentes.novembro, receitasCorrentes.dezembro,
-  ] : [];
+  // Aplica correção (se solicitada e necessária)
+  const applyCorrection = ctx && shouldCorrectYear(ano, ctx.currentYear);
+
+  const rcCorrected = applyCorrection && receitasCorrentesRaw
+    ? correctMonthlyRow(receitasCorrentesRaw, ano, ctx.ipcaMap, {
+        tipoJuros: ctx.tipoJuros,
+        currentYear: ctx.currentYear,
+      })
+    : null;
+
+  const deducoesCorrected = applyCorrection && deducoesRaw
+    ? correctMonthlyRow(deducoesRaw, ano, ctx.ipcaMap, {
+        tipoJuros: ctx.tipoJuros,
+        currentYear: ctx.currentYear,
+      })
+    : null;
+
+  const byCategory = byCategoryRaw.map((row) => {
+    const r = row as unknown as Record<string, number>;
+    if (applyCorrection) {
+      const corrected = correctMonthlyRow({ ...r, orcado: r.orcado_total }, ano, ctx.ipcaMap, {
+        tipoJuros: ctx.tipoJuros,
+        currentYear: ctx.currentYear,
+      });
+      return {
+        categoria_tributaria: row.categoria_tributaria,
+        total: corrected.acumulado,
+        orcado_total: corrected.orcado,
+      };
+    }
+    return {
+      categoria_tributaria: row.categoria_tributaria,
+      total: r.total || 0,
+      orcado_total: r.orcado_total || 0,
+    };
+  });
+
+  const rcFinal = rcCorrected || receitasCorrentesRaw;
+  const deducoesFinal = deducoesCorrected || deducoesRaw;
+
+  const months = rcFinal ? MONTH_COLS.map((m) => (rcFinal[m] as number) || 0) : [];
+
+  const totalOrcado = (rcFinal?.orcado as number) || 0;
+  const totalArrecadado = (rcFinal?.acumulado as number) || 0;
+  const totalDeducoes = (deducoesFinal?.acumulado as number) || 0;
 
   return {
     ano,
-    totalOrcado: receitasCorrentes?.orcado || totals?.total_orcado || 0,
-    totalArrecadado: receitasCorrentes?.acumulado || totals?.total_arrecadado || 0,
-    totalDeducoes: totals?.total_deducoes || 0,
-    execucaoOrcamentaria: receitasCorrentes
-      ? (receitasCorrentes.orcado > 0 ? receitasCorrentes.acumulado / receitasCorrentes.orcado : 0)
-      : 0,
+    totalOrcado,
+    totalArrecadado,
+    totalDeducoes,
+    execucaoOrcamentaria: totalOrcado > 0 ? totalArrecadado / totalOrcado : 0,
     byCategory,
     monthlyTotals: months,
+    correcaoAplicada: !!applyCorrection,
   };
 }
 
-export async function getMonthlyComparison(ano1: number, ano2: number) {
+export async function getMonthlyComparison(
+  ano1: number,
+  ano2: number,
+  ctx?: CorrectionContext | null,
+) {
   await ensureSchema();
   const db = getDb();
-  const monthCols = [
-    "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
-    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
-  ];
 
   const getMonthly = async (ano: number) => {
     const result = await db.execute({
       sql: `SELECT janeiro, fevereiro, marco, abril, maio, junho,
-             julho, agosto, setembro, outubro, novembro, dezembro
+             julho, agosto, setembro, outubro, novembro, dezembro, acumulado, orcado
       FROM receitas
       WHERE exercicio_ano = ? AND (classificacao = '10000000000' OR classificacao = '1000000000')
       LIMIT 1`,
       args: [ano],
     });
     const row = result.rows[0] as unknown as Record<string, number> | undefined;
-    return monthCols.map((m) => (row?.[m] as number) || 0);
+    if (!row) return MONTH_COLS.map(() => 0);
+
+    if (ctx && shouldCorrectYear(ano, ctx.currentYear)) {
+      const corrected = correctMonthlyRow(row, ano, ctx.ipcaMap, {
+        tipoJuros: ctx.tipoJuros,
+        currentYear: ctx.currentYear,
+      });
+      return MONTH_COLS.map((m) => corrected[m] || 0);
+    }
+    return MONTH_COLS.map((m) => (row[m] as number) || 0);
   };
 
   return {
@@ -227,7 +308,11 @@ export async function getMonthlyComparison(ano1: number, ano2: number) {
   };
 }
 
-export async function getCategoryByMonth(ano: number, categoria: string) {
+export async function getCategoryByMonth(
+  ano: number,
+  categoria: string,
+  ctx?: CorrectionContext | null,
+) {
   await ensureSchema();
   const db = getDb();
   const result = await db.execute({
@@ -243,21 +328,50 @@ export async function getCategoryByMonth(ano: number, categoria: string) {
     WHERE exercicio_ano = ? AND categoria_tributaria = ? AND is_header = 0`,
     args: [ano, categoria],
   });
-  return result.rows[0];
+  const row = result.rows[0] as unknown as Record<string, number> | undefined;
+  if (!row) return undefined;
+
+  if (ctx && shouldCorrectYear(ano, ctx.currentYear)) {
+    return correctMonthlyRow(row, ano, ctx.ipcaMap, {
+      tipoJuros: ctx.tipoJuros,
+      currentYear: ctx.currentYear,
+    });
+  }
+  return row;
 }
 
-export async function getYearlyTrend() {
+export async function getYearlyTrend(ctx?: CorrectionContext | null) {
   await ensureSchema();
   const db = getDb();
+  // Busca dados mensais para permitir correção consistente por mês
   const result = await db.execute(`
-    SELECT exercicio_ano as ano,
-      MAX(CASE WHEN classificacao IN ('10000000000', '1000000000') THEN acumulado END) as receita_corrente,
-      MAX(CASE WHEN classificacao IN ('10000000000', '1000000000') THEN orcado END) as orcado
+    SELECT exercicio_ano as ano, orcado, acumulado,
+      janeiro, fevereiro, marco, abril, maio, junho,
+      julho, agosto, setembro, outubro, novembro, dezembro
     FROM receitas
-    GROUP BY exercicio_ano
+    WHERE classificacao IN ('10000000000', '1000000000')
     ORDER BY exercicio_ano
   `);
-  return result.rows as unknown as { ano: number; receita_corrente: number; orcado: number }[];
+  const rows = result.rows as unknown as (Record<string, number> & { ano: number })[];
+
+  return rows.map((r) => {
+    if (ctx && shouldCorrectYear(r.ano, ctx.currentYear)) {
+      const corrected = correctMonthlyRow(r, r.ano, ctx.ipcaMap, {
+        tipoJuros: ctx.tipoJuros,
+        currentYear: ctx.currentYear,
+      });
+      return {
+        ano: r.ano,
+        receita_corrente: corrected.acumulado,
+        orcado: corrected.orcado,
+      };
+    }
+    return {
+      ano: r.ano,
+      receita_corrente: (r.acumulado as number) || 0,
+      orcado: (r.orcado as number) || 0,
+    };
+  });
 }
 
 // ===== RREO =====
@@ -403,7 +517,10 @@ export async function getUploadHistory() {
 
 // ===== Análise de Receitas =====
 
-export async function getReceitasSummaryByCategory(anos: number[]) {
+export async function getReceitasSummaryByCategory(
+  anos: number[],
+  ctx?: CorrectionContext | null,
+) {
   await ensureSchema();
   const db = getDb();
   if (anos.length === 0) return [];
@@ -427,7 +544,40 @@ export async function getReceitasSummaryByCategory(anos: number[]) {
     ORDER BY exercicio_ano, total_arrecadado DESC`,
     args: anos,
   });
-  return result.rows;
+  const rows = result.rows as unknown as (Record<string, number> & {
+    exercicio_ano: number;
+    categoria_tributaria: string;
+  })[];
+
+  if (!ctx) return rows;
+
+  return rows.map((row) => {
+    if (!shouldCorrectYear(row.exercicio_ano, ctx.currentYear)) return row;
+    const corrected = correctMonthlyRow(row, row.exercicio_ano, ctx.ipcaMap, {
+      tipoJuros: ctx.tipoJuros,
+      currentYear: ctx.currentYear,
+    });
+    return {
+      ...row,
+      janeiro: corrected.janeiro,
+      fevereiro: corrected.fevereiro,
+      marco: corrected.marco,
+      abril: corrected.abril,
+      maio: corrected.maio,
+      junho: corrected.junho,
+      julho: corrected.julho,
+      agosto: corrected.agosto,
+      setembro: corrected.setembro,
+      outubro: corrected.outubro,
+      novembro: corrected.novembro,
+      dezembro: corrected.dezembro,
+      total_arrecadado: corrected.acumulado,
+      total_orcado: correctOrcado(row.total_orcado as number || 0, row.exercicio_ano, ctx.ipcaMap, {
+        tipoJuros: ctx.tipoJuros,
+        currentYear: ctx.currentYear,
+      }),
+    };
+  });
 }
 
 export async function getAvailableYears() {
@@ -435,4 +585,115 @@ export async function getAvailableYears() {
   const db = getDb();
   const result = await db.execute("SELECT DISTINCT exercicio_ano as ano FROM receitas ORDER BY exercicio_ano DESC");
   return result.rows as unknown as { ano: number }[];
+}
+
+// ===== IPCA =====
+
+export interface IpcaRow {
+  ano: number;
+  mes: number;
+  variacao_mensal: number;
+  data_referencia: string;
+}
+
+export async function upsertIpcaIndices(
+  entries: { ano: number; mes: number; variacao: number; dataReferencia: string }[],
+) {
+  await ensureSchema();
+  const db = getDb();
+  if (entries.length === 0) return 0;
+
+  for (let i = 0; i < entries.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = entries.slice(i, i + BATCH_CHUNK_SIZE);
+    await db.batch(
+      chunk.map((e) => ({
+        sql: `INSERT INTO ipca_indices (ano, mes, variacao_mensal, data_referencia, updated_at)
+              VALUES (?, ?, ?, ?, datetime('now'))
+              ON CONFLICT(ano, mes) DO UPDATE SET
+                variacao_mensal = excluded.variacao_mensal,
+                data_referencia = excluded.data_referencia,
+                updated_at = datetime('now')`,
+        args: [e.ano, e.mes, e.variacao, e.dataReferencia],
+      })),
+      "write",
+    );
+  }
+  return entries.length;
+}
+
+export async function getAllIpcaIndices(): Promise<IpcaRow[]> {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute("SELECT ano, mes, variacao_mensal, data_referencia FROM ipca_indices ORDER BY ano, mes");
+  return result.rows as unknown as IpcaRow[];
+}
+
+export async function getLatestIpcaEntry() {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute(
+    "SELECT ano, mes, variacao_mensal, data_referencia, updated_at FROM ipca_indices ORDER BY ano DESC, mes DESC LIMIT 1",
+  );
+  return result.rows[0] as unknown as
+    | { ano: number; mes: number; variacao_mensal: number; data_referencia: string; updated_at: string }
+    | undefined;
+}
+
+export async function getIpcaCount() {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute("SELECT COUNT(*) as c FROM ipca_indices");
+  return (result.rows[0] as unknown as { c: number }).c;
+}
+
+/**
+ * Carrega todos os índices do IPCA em um Map para uso nos cálculos de correção.
+ * Chave: "YYYY-M" (ex: "2024-1")
+ */
+export async function loadIpcaMap(): Promise<Map<string, number>> {
+  const rows = await getAllIpcaIndices();
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    map.set(`${r.ano}-${r.mes}`, r.variacao_mensal);
+  }
+  return map;
+}
+
+// ===== Configurações =====
+
+export async function getConfiguracao(chave: string): Promise<string | null> {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute({
+    sql: "SELECT valor FROM configuracoes WHERE chave = ?",
+    args: [chave],
+  });
+  const row = result.rows[0] as unknown as { valor: string } | undefined;
+  return row?.valor ?? null;
+}
+
+export async function setConfiguracao(chave: string, valor: string, descricao?: string) {
+  await ensureSchema();
+  const db = getDb();
+  await db.execute({
+    sql: `INSERT INTO configuracoes (chave, valor, descricao, updated_at)
+          VALUES (?, ?, ?, datetime('now'))
+          ON CONFLICT(chave) DO UPDATE SET
+            valor = excluded.valor,
+            descricao = COALESCE(excluded.descricao, configuracoes.descricao),
+            updated_at = datetime('now')`,
+    args: [chave, valor, descricao || null],
+  });
+}
+
+export async function getAllConfiguracoes() {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute("SELECT chave, valor, descricao, updated_at FROM configuracoes ORDER BY chave");
+  return result.rows as unknown as {
+    chave: string;
+    valor: string;
+    descricao: string | null;
+    updated_at: string;
+  }[];
 }

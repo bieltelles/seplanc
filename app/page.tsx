@@ -8,6 +8,7 @@ import { TaxBreakdown } from "@/components/dashboard/tax-breakdown";
 import { BudgetExecution } from "@/components/dashboard/budget-execution";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { LoadingSpinner } from "@/components/shared/loading";
+import { useCorrection } from "@/components/providers/correction-provider";
 
 interface DashboardData {
   summary: {
@@ -27,16 +28,19 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const { ativa: correcaoAtiva } = useCorrection();
   const [data, setData] = useState<DashboardData | null>(null);
   const [anos, setAnos] = useState<number[]>([]);
   const [selectedAno, setSelectedAno] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async (ano?: number) => {
+  const fetchData = useCallback(async (ano?: number, correcao?: boolean) => {
     setLoading(true);
     try {
-      const params = ano ? `?ano=${ano}` : "";
-      const res = await fetch(`/api/dashboard${params}`);
+      const params = new URLSearchParams();
+      if (ano) params.set("ano", String(ano));
+      if (correcao) params.set("correcao", "1");
+      const res = await fetch(`/api/dashboard?${params}`);
       const json = await res.json();
       setData(json.data);
       setAnos(json.anos || []);
@@ -49,12 +53,13 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(selectedAno || undefined, correcaoAtiva);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [correcaoAtiva]);
 
   const handleAnoChange = (ano: number) => {
     setSelectedAno(ano);
-    fetchData(ano);
+    fetchData(ano, correcaoAtiva);
   };
 
   if (loading) {

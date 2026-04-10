@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Upload,
   FolderOpen,
-  Download,
+  Settings,
 } from "lucide-react";
 
 const navItems = [
@@ -20,6 +20,7 @@ const navItems = [
   { href: "/rgf", label: "RGF", icon: ShieldCheck },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/exercicios", label: "Exercícios", icon: FolderOpen },
+  { href: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 export function Sidebar() {

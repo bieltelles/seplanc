@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReceitasFiltered, getAvailableYears } from "@/lib/db/queries";
+import { loadCorrectionContext } from "@/lib/ipca/context";
 import { MONTHS } from "@/lib/utils/format";
 
 export async function GET(request: NextRequest) {
@@ -7,19 +8,24 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const anosParam = searchParams.get("anos");
     const categoria = searchParams.get("categoria");
+    const correcaoAtiva = searchParams.get("correcao") === "1";
 
     const availableYears = (await getAvailableYears()).map((y) => y.ano);
     const anos = anosParam
       ? anosParam.split(",").map(Number).filter((n) => !isNaN(n))
       : availableYears;
 
-    const data = await getReceitasFiltered({
-      anos,
-      categoria: categoria || undefined,
-      apenasDetalhes: true,
-    }) as Record<string, unknown>[];
+    const ctx = correcaoAtiva ? await loadCorrectionContext() : null;
 
-    // Build CSV
+    const data = (await getReceitasFiltered(
+      {
+        anos,
+        categoria: categoria || undefined,
+        apenasDetalhes: true,
+      },
+      ctx,
+    )) as Record<string, unknown>[];
+
     const headers = [
       "Exercício", "Rubrica", "Fonte", "Classificação", "Descrição",
       "Categoria", "Orçado", ...MONTHS.map((m) => m.charAt(0).toUpperCase() + m.slice(1)),
@@ -43,11 +49,12 @@ export async function GET(request: NextRequest) {
     }
 
     const csvContent = csvRows.join("\n");
+    const suffix = ctx ? "_constantes" : "_correntes";
 
     return new NextResponse(csvContent, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="receitas_${anos.join("-")}.csv"`,
+        "Content-Disposition": `attachment; filename="receitas_${anos.join("-")}${suffix}.csv"`,
       },
     });
   } catch (error) {

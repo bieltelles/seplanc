@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReceitasSummaryByCategory, getAvailableYears, getCategoryByMonth } from "@/lib/db/queries";
+import { loadCorrectionContext } from "@/lib/ipca/context";
 import { MONTHS } from "@/lib/utils/format";
 import { calcDescriptiveStats, calcVariation } from "@/lib/analysis/descriptive";
 
@@ -9,25 +10,35 @@ export async function GET(request: NextRequest) {
     const anosParam = searchParams.get("anos");
     const categoria = searchParams.get("categoria");
     const tipo = searchParams.get("tipo") || "summary";
+    const correcaoAtiva = searchParams.get("correcao") === "1";
 
     const availableYears = (await getAvailableYears()).map((y) => y.ano);
     const anos = anosParam
       ? anosParam.split(",").map(Number).filter((n) => !isNaN(n))
       : availableYears.slice(0, 2);
 
+    const ctx = correcaoAtiva ? await loadCorrectionContext() : null;
+
     if (tipo === "summary") {
-      const data = await getReceitasSummaryByCategory(anos);
+      const data = await getReceitasSummaryByCategory(anos, ctx);
       return NextResponse.json({
         data,
         anos: availableYears,
         selectedAnos: anos,
+        correcaoAplicada: !!ctx,
       });
     }
 
     if (tipo === "monthly" && categoria) {
-      const results: { ano: number; monthly: Record<string, number>; stats: ReturnType<typeof calcDescriptiveStats>; acumulado: number; orcado: number }[] = [];
+      const results: {
+        ano: number;
+        monthly: Record<string, number>;
+        stats: ReturnType<typeof calcDescriptiveStats>;
+        acumulado: number;
+        orcado: number;
+      }[] = [];
       for (const ano of anos) {
-        const row = await getCategoryByMonth(ano, categoria) as Record<string, number> | undefined;
+        const row = (await getCategoryByMonth(ano, categoria, ctx)) as Record<string, number> | undefined;
         const monthlyData: Record<string, number> = {};
         for (const m of MONTHS) {
           monthlyData[m] = (row?.[m] as number) || 0;
@@ -42,7 +53,6 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // Calculate year-over-year variation
       const withVariation = results.map((r, i) => ({
         ...r,
         variacao: i < results.length - 1
@@ -55,13 +65,15 @@ export async function GET(request: NextRequest) {
         anos: availableYears,
         selectedAnos: anos,
         categoria,
+        correcaoAplicada: !!ctx,
       });
     }
 
     return NextResponse.json({
-      data: await getReceitasSummaryByCategory(anos),
+      data: await getReceitasSummaryByCategory(anos, ctx),
       anos: availableYears,
       selectedAnos: anos,
+      correcaoAplicada: !!ctx,
     });
   } catch (error) {
     return NextResponse.json(

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { LoadingSpinner } from "@/components/shared/loading";
 import { TAX_CATEGORY_LABELS, TAX_CATEGORY_COLORS, type TaxCategory } from "@/lib/constants/tax-categories";
 import { MONTH_LABELS } from "@/lib/utils/format";
+import { useCorrection } from "@/components/providers/correction-provider";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -41,6 +42,7 @@ interface MonthlyData {
 }
 
 export default function ReceitasPage() {
+  const { ativa: correcaoAtiva } = useCorrection();
   const [anos, setAnos] = useState<number[]>([]);
   const [selectedAnos, setSelectedAnos] = useState<number[]>([]);
   const [categoria, setCategoria] = useState<string>("");
@@ -49,17 +51,18 @@ export default function ReceitasPage() {
   const [summaryData, setSummaryData] = useState<SummaryRow[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
 
-  const fetchSummary = useCallback(async (selAnos: number[]) => {
+  const fetchSummary = useCallback(async (selAnos: number[], correcao: boolean) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (selAnos.length > 0) params.set("anos", selAnos.join(","));
       params.set("tipo", "summary");
+      if (correcao) params.set("correcao", "1");
       const res = await fetch(`/api/receitas?${params}`);
       const json = await res.json();
       setSummaryData(json.data || []);
       setAnos(json.anos || []);
-      if (json.selectedAnos && selectedAnos.length === 0) {
+      if (json.selectedAnos && selAnos.length === 0) {
         setSelectedAnos(json.selectedAnos);
       }
     } catch (err) {
@@ -69,7 +72,7 @@ export default function ReceitasPage() {
     }
   }, []);
 
-  const fetchMonthly = useCallback(async (selAnos: number[], cat: string) => {
+  const fetchMonthly = useCallback(async (selAnos: number[], cat: string, correcao: boolean) => {
     if (!cat) return;
     setLoading(true);
     try {
@@ -77,6 +80,7 @@ export default function ReceitasPage() {
       params.set("anos", selAnos.join(","));
       params.set("categoria", cat);
       params.set("tipo", "monthly");
+      if (correcao) params.set("correcao", "1");
       const res = await fetch(`/api/receitas?${params}`);
       const json = await res.json();
       setMonthlyData(json.data || []);
@@ -88,27 +92,29 @@ export default function ReceitasPage() {
   }, []);
 
   useEffect(() => {
-    fetchSummary([]);
-  }, [fetchSummary]);
+    fetchSummary(selectedAnos, correcaoAtiva);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [correcaoAtiva]);
 
   useEffect(() => {
     if (viewMode === "monthly" && categoria && selectedAnos.length > 0) {
-      fetchMonthly(selectedAnos, categoria);
+      fetchMonthly(selectedAnos, categoria, correcaoAtiva);
     }
-  }, [viewMode, categoria, selectedAnos, fetchMonthly]);
+  }, [viewMode, categoria, selectedAnos, fetchMonthly, correcaoAtiva]);
 
   const handleAnoToggle = (ano: number) => {
     const newAnos = selectedAnos.includes(ano)
       ? selectedAnos.filter((a) => a !== ano)
       : [...selectedAnos, ano].sort((a, b) => b - a);
     setSelectedAnos(newAnos);
-    fetchSummary(newAnos);
+    fetchSummary(newAnos, correcaoAtiva);
   };
 
   const handleExportCsv = () => {
     const params = new URLSearchParams();
     if (selectedAnos.length > 0) params.set("anos", selectedAnos.join(","));
     if (categoria) params.set("categoria", categoria);
+    if (correcaoAtiva) params.set("correcao", "1");
     window.open(`/api/export?${params}`, "_blank");
   };
 

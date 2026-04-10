@@ -86,6 +86,27 @@ export async function initializeSchema() {
       erro_mensagem TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     )`,
+
+    `CREATE TABLE IF NOT EXISTS ipca_indices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ano INTEGER NOT NULL,
+      mes INTEGER NOT NULL,
+      variacao_mensal REAL NOT NULL,
+      data_referencia TEXT NOT NULL,
+      fonte TEXT DEFAULT 'BCB-SGS-433',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(ano, mes)
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_ipca_ano_mes ON ipca_indices(ano, mes)`,
+
+    `CREATE TABLE IF NOT EXISTS configuracoes (
+      chave TEXT PRIMARY KEY,
+      valor TEXT NOT NULL,
+      descricao TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`,
   ];
 
   for (const sql of statements) {
