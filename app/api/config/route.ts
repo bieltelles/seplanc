@@ -74,7 +74,22 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    const body = (await request.json()) as Record<string, string>;
+    let body: Record<string, string>;
+    try {
+      body = (await request.json()) as Record<string, string>;
+    } catch (parseErr) {
+      return NextResponse.json(
+        { error: `Corpo da requisição inválido: ${String(parseErr)}` },
+        { status: 400 },
+      );
+    }
+
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        { error: "Corpo da requisição deve ser um objeto JSON" },
+        { status: 400 },
+      );
+    }
 
     // Validações básicas
     if (body.correcao_tipo_juros && !["compostos", "simples"].includes(body.correcao_tipo_juros)) {
@@ -99,14 +114,18 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    const atualizadas: string[] = [];
     for (const [chave, valor] of Object.entries(body)) {
+      if (typeof valor !== "string" && typeof valor !== "number") continue;
       const def = CONFIG_DEFAULTS[chave];
       await setConfiguracao(chave, String(valor), def?.descricao);
+      atualizadas.push(chave);
     }
 
-    const configs = await getAllConfiguracoes();
-    return NextResponse.json({ success: true, configuracoes: configs });
+    // Resposta enxuta: o cliente refaz o GET depois para obter a lista atualizada.
+    return NextResponse.json({ success: true, atualizadas });
   } catch (error) {
+    console.error("[api/config PUT] erro:", error);
     return NextResponse.json(
       { error: String(error) },
       { status: 500 },
