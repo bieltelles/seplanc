@@ -14,7 +14,7 @@ import {
   expandCategoriaFilter,
   type TaxCategory,
 } from "@/lib/constants/tax-categories";
-import { MONTH_LABELS } from "@/lib/utils/format";
+import { MONTH_LABELS, formatCurrency } from "@/lib/utils/format";
 import { useCorrection } from "@/components/providers/correction-provider";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -400,8 +400,8 @@ export default function ReceitasPage() {
                                 <td className="px-3 py-2">
                                   {TAX_CATEGORY_LABELS[d.categoria_tributaria as TaxCategory] || d.categoria_tributaria}
                                 </td>
-                                <td className="px-3 py-2 text-right">{formatTooltipValue(d.total_orcado)}</td>
-                                <td className="px-3 py-2 text-right font-medium">{formatTooltipValue(d.total_arrecadado)}</td>
+                                <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrency(d.total_orcado)}</td>
+                                <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{formatCurrency(d.total_arrecadado)}</td>
                                 <td className="px-3 py-2 text-right">{exec}%</td>
                                 {MONTHS_KEYS.map((m) => (
                                   <td key={m} className="px-2 py-2 text-right">
