@@ -47,6 +47,21 @@ export async function upsertExercicio(ano: number, tipo: string) {
   });
 }
 
+export async function deleteExercicio(ano: number) {
+  await ensureSchema();
+  const db = getDb();
+  await db.batch(
+    [
+      { sql: "DELETE FROM receitas WHERE exercicio_ano = ?", args: [ano] },
+      { sql: "DELETE FROM rreo WHERE exercicio_ano = ?", args: [ano] },
+      { sql: "DELETE FROM rgf WHERE exercicio_ano = ?", args: [ano] },
+      { sql: "DELETE FROM uploads WHERE exercicio_ano = ?", args: [ano] },
+      { sql: "DELETE FROM exercicios WHERE ano = ?", args: [ano] },
+    ],
+    "write",
+  );
+}
+
 // ===== Receitas =====
 
 const BATCH_CHUNK_SIZE = 200;

@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/shared/loading";
-import { FolderOpen, FileText, Upload, Calendar } from "lucide-react";
+import { FolderOpen, FileText, Upload, Calendar, Trash2 } from "lucide-react";
 
 interface ExercicioRow {
   ano: number;
@@ -34,23 +35,47 @@ export default function ExerciciosPage() {
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [anos, setAnos] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingAno, setDeletingAno] = useState<number | null>(null);
+
+  async function fetchData() {
+    try {
+      const res = await fetch("/api/exercicios");
+      const json = await res.json();
+      setExercicios(json.exercicios || []);
+      setUploads(json.uploads || []);
+      setAnos(json.anos || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch("/api/exercicios");
-        const json = await res.json();
-        setExercicios(json.exercicios || []);
-        setUploads(json.uploads || []);
-        setAnos(json.anos || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchData();
   }, []);
+
+  async function handleDelete(ano: number) {
+    const confirmed = window.confirm(
+      `Tem certeza que deseja excluir TODOS os dados do exercício ${ano}?\n\nEsta ação irá remover receitas, RREO, RGF e histórico de uploads deste ano. Não pode ser desfeita.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingAno(ano);
+    try {
+      const res = await fetch(`/api/exercicios?ano=${ano}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) {
+        alert(`Erro ao excluir: ${json.error || "desconhecido"}`);
+        return;
+      }
+      await fetchData();
+    } catch (err) {
+      alert(`Erro ao excluir: ${String(err)}`);
+    } finally {
+      setDeletingAno(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -144,7 +169,7 @@ export default function ExerciciosPage() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-semfaz-50 font-bold text-semfaz-700">
                       {ano}
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-1 flex-wrap gap-2">
                       {receita && (
                         <Badge variant="default">
                           Receitas ({receita.total_receitas.toLocaleString("pt-BR")} registros)
@@ -164,6 +189,16 @@ export default function ExerciciosPage() {
                         <Badge variant="outline">Sem dados</Badge>
                       )}
                     </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(ano)}
+                      disabled={deletingAno === ano}
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      {deletingAno === ano ? "Excluindo..." : "Excluir"}
+                    </Button>
                   </div>
                 );
               })}
