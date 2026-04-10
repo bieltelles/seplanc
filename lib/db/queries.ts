@@ -117,6 +117,58 @@ export async function getReceitasByYear(ano: number) {
   return result.rows;
 }
 
+/**
+ * Reclassifica todas as linhas de receitas aplicando a função `classifyRevenue`
+ * atual sobre a coluna `classificacao`. Útil quando a lógica de classificação
+ * é atualizada sem precisar reimportar os CSVs.
+ */
+export async function reclassifyAllReceitas(): Promise<{
+  totalLidos: number;
+  totalAtualizados: number;
+  porCategoria: Record<string, number>;
+}> {
+  const { classifyRevenue } = await import("@/lib/constants/tax-categories");
+  await ensureSchema();
+  const db = getDb();
+
+  const result = await db.execute(
+    "SELECT id, classificacao, categoria_tributaria FROM receitas",
+  );
+  const rows = result.rows as unknown as {
+    id: number;
+    classificacao: string;
+    categoria_tributaria: string | null;
+  }[];
+
+  const updates: { id: number; novaCategoria: string }[] = [];
+  const porCategoria: Record<string, number> = {};
+
+  for (const row of rows) {
+    const nova = classifyRevenue(row.classificacao || "");
+    porCategoria[nova] = (porCategoria[nova] || 0) + 1;
+    if (nova !== row.categoria_tributaria) {
+      updates.push({ id: row.id, novaCategoria: nova });
+    }
+  }
+
+  for (let i = 0; i < updates.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + BATCH_CHUNK_SIZE);
+    await db.batch(
+      chunk.map((u) => ({
+        sql: "UPDATE receitas SET categoria_tributaria = ? WHERE id = ?",
+        args: [u.novaCategoria, u.id],
+      })),
+      "write",
+    );
+  }
+
+  return {
+    totalLidos: rows.length,
+    totalAtualizados: updates.length,
+    porCategoria,
+  };
+}
+
 export async function getReceitasFiltered(
   params: {
     anos?: number[];

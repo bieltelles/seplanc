@@ -44,7 +44,26 @@ export const TAX_CATEGORY_COLORS: Record<TaxCategory, string> = {
 
 /**
  * Classifica um código de receita na categoria tributária correspondente.
- * Suporta formato antigo (10 dígitos, 2013-2018) e novo (11 dígitos, 2019+).
+ *
+ * Suporta três formatos usados pela prefeitura ao longo dos anos:
+ *
+ * - **Formato antigo (10 dígitos, 2013-2017)** — Portaria STN antiga
+ *   - 1112020000 → IPTU (Propriedade Predial e Territorial Urbana)
+ *   - 1112040000 → IR  (Renda e Proventos, retido na fonte)
+ *   - 1112080000 → ITBI (Transmissão Intervivos)
+ *   - 1113050000 → ISS/ISSQN (Serviços de Qualquer Natureza)
+ *
+ * - **Formato intermediário (11 dígitos, 2018-2021)** — prefixo `11180`
+ *   - 11180110000 → IPTU
+ *   - 11180140000 → ITBI
+ *   - 11180230000 → ISS
+ *   - 11130xxxxxx → IR (Imposto sobre a Renda - Retido na Fonte)
+ *
+ * - **Formato novo MCASP (11 dígitos, 2022+)** — prefixos `11125`, `11145`
+ *   - 11125 (exceto 111253) → IPTU
+ *   - 111253            → ITBI
+ *   - 11130              → IR
+ *   - 11140 / 11145      → ISS
  */
 export function classifyRevenue(classificacao: string): TaxCategory {
   const code = classificacao.trim();
@@ -52,12 +71,21 @@ export function classifyRevenue(classificacao: string): TaxCategory {
   // Deduções: códigos começando com 9
   if (code.startsWith("9")) return "DEDUCOES";
 
-  // Formato novo (11 dígitos, 2019+)
+  // Formato 11 dígitos (2018+)
   if (code.length === 11) {
-    if (code.startsWith("11125") && !code.startsWith("111253")) return "IPTU";
+    // ----- 2018-2021 (prefixo 11180) -----
+    if (code.startsWith("1118011")) return "IPTU";
+    if (code.startsWith("1118014")) return "ITBI";
+    if (code.startsWith("1118023")) return "ISS";
+
+    // ----- 2022+ (MCASP) -----
     if (code.startsWith("111253")) return "ITBI";
-    if (code.startsWith("11130")) return "IR";
+    if (code.startsWith("11125")) return "IPTU";
     if (code.startsWith("11145") || code.startsWith("11140")) return "ISS";
+
+    // ----- Comum a 2018+ -----
+    if (code.startsWith("11130")) return "IR";
+
     if (code.startsWith("112")) return "TAXAS";
     if (code.startsWith("12") || code.startsWith("14")) return "CONTRIBUICOES";
     if (code.startsWith("13")) return "RECEITA_PATRIMONIAL";
@@ -66,10 +94,10 @@ export function classifyRevenue(classificacao: string): TaxCategory {
     if (code.startsWith("2")) return "RECEITAS_CAPITAL";
   }
 
-  // Formato antigo (10 dígitos, 2013-2018)
+  // Formato antigo (10 dígitos, 2013-2017)
   if (code.length === 10) {
-    if (code.startsWith("111202") || code.startsWith("111208")) return "IPTU";
     if (code.startsWith("111208")) return "ITBI";
+    if (code.startsWith("111202")) return "IPTU";
     if (code.startsWith("111204")) return "IR";
     if (code.startsWith("111305") || code.startsWith("111300")) return "ISS";
     if (code.startsWith("112")) return "TAXAS";
