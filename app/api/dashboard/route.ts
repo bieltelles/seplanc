@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDashboardSummary, getMonthlyComparison, getYearlyTrend, getAvailableYears } from "@/lib/db/queries";
 import { loadCorrectionContext } from "@/lib/ipca/context";
+import { parseDeducoesFromSearchParams, hasAnySubtipoAtivo } from "@/lib/deducoes/context";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,11 +21,12 @@ export async function GET(request: NextRequest) {
     const previousAno = anos.find((a) => a.ano === selectedAno - 1)?.ano;
 
     const ctx = correcaoAtiva ? await loadCorrectionContext(anoBase) : null;
+    const deducoesCtx = parseDeducoesFromSearchParams(searchParams);
 
-    const summary = await getDashboardSummary(selectedAno, ctx);
-    const trend = await getYearlyTrend(ctx);
+    const summary = await getDashboardSummary(selectedAno, ctx, deducoesCtx);
+    const trend = await getYearlyTrend(ctx, deducoesCtx);
     const comparison = previousAno
-      ? await getMonthlyComparison(selectedAno, previousAno, ctx)
+      ? await getMonthlyComparison(selectedAno, previousAno, ctx, deducoesCtx)
       : null;
 
     return NextResponse.json({
@@ -42,6 +44,10 @@ export async function GET(request: NextRequest) {
             targetYear: ctx.targetYear,
             currentYear: ctx.currentYear,
           }
+        : null,
+      deducoesAplicadas: hasAnySubtipoAtivo(deducoesCtx),
+      deducoesInfo: hasAnySubtipoAtivo(deducoesCtx)
+        ? { subtipos: deducoesCtx.subtipos }
         : null,
     });
   } catch (error) {

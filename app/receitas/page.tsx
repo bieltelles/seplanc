@@ -16,6 +16,7 @@ import {
 } from "@/lib/constants/tax-categories";
 import { MONTH_LABELS, formatCurrency } from "@/lib/utils/format";
 import { useCorrection } from "@/components/providers/correction-provider";
+import { useDeducoes } from "@/components/providers/deducoes-provider";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -49,6 +50,12 @@ interface MonthlyData {
 
 export default function ReceitasPage() {
   const { ativa: correcaoAtiva, anoBase, hydrated } = useCorrection();
+  const {
+    ativa: deducoesAtiva,
+    subtipos: deducoesSubtipos,
+    hydrated: deducoesHydrated,
+    toQueryString: deducoesQueryString,
+  } = useDeducoes();
   const [anos, setAnos] = useState<number[]>([]);
   const [selectedAnos, setSelectedAnos] = useState<number[]>([]);
   const [categoria, setCategoria] = useState<string>("");
@@ -56,6 +63,15 @@ export default function ReceitasPage() {
   const [loading, setLoading] = useState(true);
   const [summaryData, setSummaryData] = useState<SummaryRow[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
+
+  const appendDeducoes = useCallback(
+    (params: URLSearchParams): string => {
+      const dq = deducoesQueryString();
+      const base = params.toString();
+      return `${base}${base && dq ? "&" : ""}${dq}`;
+    },
+    [deducoesQueryString],
+  );
 
   const fetchSummary = useCallback(
     async (selAnos: number[], correcao: boolean, pivot: number) => {
@@ -68,7 +84,7 @@ export default function ReceitasPage() {
           params.set("correcao", "1");
           params.set("anoBase", String(pivot));
         }
-        const res = await fetch(`/api/receitas?${params}`);
+        const res = await fetch(`/api/receitas?${appendDeducoes(params)}`);
         const json = await res.json();
         setSummaryData(json.data || []);
         setAnos(json.anos || []);
@@ -81,7 +97,7 @@ export default function ReceitasPage() {
         setLoading(false);
       }
     },
-    [],
+    [appendDeducoes],
   );
 
   const fetchMonthly = useCallback(
@@ -97,7 +113,7 @@ export default function ReceitasPage() {
           params.set("correcao", "1");
           params.set("anoBase", String(pivot));
         }
-        const res = await fetch(`/api/receitas?${params}`);
+        const res = await fetch(`/api/receitas?${appendDeducoes(params)}`);
         const json = await res.json();
         setMonthlyData(json.data || []);
       } catch (err) {
@@ -106,21 +122,45 @@ export default function ReceitasPage() {
         setLoading(false);
       }
     },
-    [],
+    [appendDeducoes],
   );
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !deducoesHydrated) return;
     fetchSummary(selectedAnos, correcaoAtiva, anoBase);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [correcaoAtiva, anoBase, hydrated]);
+  }, [
+    correcaoAtiva,
+    anoBase,
+    hydrated,
+    deducoesHydrated,
+    deducoesAtiva,
+    deducoesSubtipos.FUNDEB,
+    deducoesSubtipos.ABATIMENTO,
+    deducoesSubtipos.INTRA,
+    deducoesSubtipos.OUTRAS,
+  ]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !deducoesHydrated) return;
     if (viewMode === "monthly" && categoria && selectedAnos.length > 0) {
       fetchMonthly(selectedAnos, categoria, correcaoAtiva, anoBase);
     }
-  }, [viewMode, categoria, selectedAnos, fetchMonthly, correcaoAtiva, anoBase, hydrated]);
+  }, [
+    viewMode,
+    categoria,
+    selectedAnos,
+    fetchMonthly,
+    correcaoAtiva,
+    anoBase,
+    hydrated,
+    deducoesHydrated,
+    deducoesAtiva,
+    deducoesSubtipos.FUNDEB,
+    deducoesSubtipos.ABATIMENTO,
+    deducoesSubtipos.INTRA,
+    deducoesSubtipos.OUTRAS,
+  ]);
 
   const handleAnoToggle = (ano: number) => {
     const newAnos = selectedAnos.includes(ano)

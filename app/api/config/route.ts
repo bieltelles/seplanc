@@ -26,7 +26,42 @@ const CONFIG_DEFAULTS: Record<string, { valor: string; descricao: string }> = {
     descricao:
       "Ano pivô padrão: a partir deste ano os valores ficam correntes; anos anteriores são corrigidos para 31/12 do ano imediatamente anterior",
   },
+  // ----- Deduções (valores líquidos) -----
+  deducoes_liquido_padrao_ativa: {
+    valor: "false",
+    descricao:
+      "Define se a toggle de valores líquidos de deduções deve começar ativada ao abrir o sistema",
+  },
+  deducoes_incluir_fundeb: {
+    valor: "true",
+    descricao:
+      "Quando a toggle de valores líquidos está ativa, subtrair as deduções de FUNDEB (retenções constitucionais sobre transferências)",
+  },
+  deducoes_incluir_abatimentos: {
+    valor: "true",
+    descricao:
+      "Subtrair abatimentos, restituições e devoluções de receita própria (IPTU, ISS, taxas, dívida ativa, etc.)",
+  },
+  deducoes_incluir_intra: {
+    valor: "false",
+    descricao:
+      "Subtrair receitas intraorçamentárias (elimina dupla contagem em consolidações)",
+  },
+  deducoes_incluir_outras: {
+    valor: "false",
+    descricao:
+      "Subtrair demais deduções não enquadradas nas categorias acima",
+  },
 };
+
+const BOOL_CONFIG_KEYS = new Set([
+  "correcao_padrao_ativa",
+  "deducoes_liquido_padrao_ativa",
+  "deducoes_incluir_fundeb",
+  "deducoes_incluir_abatimentos",
+  "deducoes_incluir_intra",
+  "deducoes_incluir_outras",
+]);
 
 async function ensureDefaults() {
   for (const [chave, def] of Object.entries(CONFIG_DEFAULTS)) {
@@ -98,11 +133,15 @@ export async function PUT(request: NextRequest) {
         { status: 400 },
       );
     }
-    if (body.correcao_padrao_ativa && !["true", "false"].includes(body.correcao_padrao_ativa)) {
-      return NextResponse.json(
-        { error: "correcao_padrao_ativa deve ser 'true' ou 'false'" },
-        { status: 400 },
-      );
+    // Todas as chaves booleanas (correção + deduções) aceitam apenas "true"/"false".
+    for (const key of BOOL_CONFIG_KEYS) {
+      const v = body[key];
+      if (v !== undefined && v !== "true" && v !== "false") {
+        return NextResponse.json(
+          { error: `${key} deve ser 'true' ou 'false'` },
+          { status: 400 },
+        );
+      }
     }
     if (body.correcao_ano_base_padrao !== undefined) {
       const n = parseInt(body.correcao_ano_base_padrao, 10);

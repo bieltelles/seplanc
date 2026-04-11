@@ -2,6 +2,7 @@
 
 import { Select } from "@/components/ui/select";
 import { CorrectionToggle } from "@/components/layout/correction-toggle";
+import { DeducoesToggle } from "@/components/layout/deducoes-toggle";
 
 interface HeaderProps {
   title: string;
@@ -10,6 +11,7 @@ interface HeaderProps {
   selectedAno?: number;
   onAnoChange?: (ano: number) => void;
   showCorrectionToggle?: boolean;
+  showDeducoesToggle?: boolean;
 }
 
 export function Header({
@@ -19,6 +21,7 @@ export function Header({
   selectedAno,
   onAnoChange,
   showCorrectionToggle = true,
+  showDeducoesToggle = true,
 }: HeaderProps) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-white px-6 py-4">
@@ -27,6 +30,7 @@ export function Header({
         {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       <div className="flex flex-wrap items-center gap-3">
+        {showDeducoesToggle && <DeducoesToggle />}
         {showCorrectionToggle && <CorrectionToggle />}
         {anos && anos.length > 0 && (
           <div className="flex items-center gap-2">

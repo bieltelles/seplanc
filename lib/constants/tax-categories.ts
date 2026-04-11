@@ -301,6 +301,107 @@ export function classifyRevenue(classificacao: string): TaxCategory {
   return "OUTROS";
 }
 
+// ============================================================================
+// DEDUÇÕES (conta 9) — subtipos aplicáveis na toggle de valores líquidos
+// ============================================================================
+
+/**
+ * Subtipo de dedução, usado para permitir ao usuário escolher **quais
+ * categorias de dedução** devem ser subtraídas das receitas ao exibir
+ * "valores líquidos".
+ *
+ * - `FUNDEB`: retenção constitucional sobre FPM, ITR, LC 87/96, ICMS,
+ *   IPVA, IPI-Exportação. Historicamente é a única dedução automática
+ *   sobre transferências correntes (EC 108/2020).
+ * - `ABATIMENTO`: deduções de receita própria — restituições, devoluções,
+ *   cancelamentos e abatimentos de IPTU, ISS, ITBI, taxas, contribuições,
+ *   dívida ativa, receita patrimonial, etc.
+ * - `INTRA`: deduções de receitas intraorçamentárias (prefixo `97`).
+ *   Tipicamente usado para eliminar dupla contagem em consolidações.
+ * - `OUTRAS`: catch-all (ex: deduções de transferências que não entram
+ *   no FUNDEB, como SUS, convênios específicos, etc.).
+ */
+export type DeducaoSubtipo = "FUNDEB" | "ABATIMENTO" | "INTRA" | "OUTRAS";
+
+export const DEDUCAO_SUBTIPO_LABELS: Record<DeducaoSubtipo, string> = {
+  FUNDEB: "FUNDEB (retenção constitucional sobre transferências)",
+  ABATIMENTO: "Abatimentos, restituições e devoluções de receita própria",
+  INTRA: "Intraorçamentárias (eliminação de dupla contagem)",
+  OUTRAS: "Outras deduções",
+};
+
+/**
+ * Classifica uma linha de dedução (código `9...`) em seu subtipo funcional.
+ *
+ * A regra combina dois sinais:
+ *  1. A **descrição** — se contiver a palavra "FUNDEB", é dedução FUNDEB.
+ *     Esse é o sinal mais confiável, porque os CSVs da prefeitura anotam
+ *     explicitamente as retenções constitucionais com "DEDUÇÃO DA RECEITA
+ *     PARA FORMAÇÃO DO FUNDEB - FPM/ICMS/IPVA/ITR/..." em várias eras.
+ *  2. O **código** — fallback para linhas de detalhe (MCASP 2022+) que
+ *     não repetem "FUNDEB" no nome porque herdam do pai. Os prefixos
+ *     cobrem as três eras (STN 10d, intermediário 11d, MCASP 11d/12d).
+ *
+ * Para códigos que não começam com `9` a função retorna `"OUTRAS"`, mas
+ * o consumidor deve evitar chamá-la para receitas positivas.
+ */
+export function classifyDeducaoSubtipo(
+  classificacao: string,
+  descricao: string = "",
+): DeducaoSubtipo {
+  const code = classificacao.trim();
+  const desc = descricao.trim().toUpperCase();
+
+  if (!code.startsWith("9")) return "OUTRAS";
+
+  // Intraorçamentárias: prefixo `97` (dedução de receitas intra, quando existir).
+  if (code.startsWith("97")) return "INTRA";
+
+  // FUNDEB por descrição (sinal mais confiável).
+  if (desc.includes("FUNDEB")) return "FUNDEB";
+
+  // FUNDEB por código — prefixos específicos nas três eras.
+  // STN antigo (2013-2017) e intermediário (2018-2021):
+  //   91700xxxxx           → header "DEDUÇÃO DA RECEITA PARA FORMAÇÃO DO FUNDEB"
+  //   91721010xxx / 91721... → DEDUÇÃO transferências União (FPM/ITR/LC87/IOF-Ouro)
+  //   91722010xxx / 91722... → DEDUÇÃO transferências Estado (ICMS/IPVA/IPI-Exportação)
+  if (code.startsWith("91700")) return "FUNDEB";
+  if (code.startsWith("91721")) return "FUNDEB";
+  if (code.startsWith("91722")) return "FUNDEB";
+  // MCASP (2022+): dedução por cota-parte específica do FUNDEB
+  //   917115xxxxxx → FPE/FPM, ITR, LC 87/96 (União)
+  //   917215xxxxxx → ICMS, IPVA, IPI-Exportação (Estado)
+  if (code.startsWith("917115")) return "FUNDEB";
+  if (code.startsWith("917215")) return "FUNDEB";
+
+  // Abatimentos/restituições/devoluções de receita própria.
+  // Qualquer 911x (impostos/taxas), 912x (contribuições), 913x (patrimonial),
+  // 914x (agropecuária), 916x (serviços), 919x (outras correntes/dívida ativa).
+  // Usa regex para cobrir todos os não-7 do segundo dígito (o segundo dígito
+  // 7 é reservado para transferências correntes, já tratado acima).
+  if (/^91[012346689]/.test(code)) return "ABATIMENTO";
+
+  // Resto: deduções de transferências que não são FUNDEB (ex: SUS, convênios,
+  // transferências específicas do MA, etc.) e deduções de capital (92...).
+  return "OUTRAS";
+}
+
+/**
+ * Converte um código de dedução (`9xxx...`) para o código da receita
+ * "positiva" equivalente, removendo o primeiro dígito `9`. Usado para
+ * descobrir em **qual categoria** (IPTU, ISS, FPM, ICMS, ...) a dedução
+ * deve ser aplicada ao calcular valores líquidos.
+ *
+ * Exemplos:
+ * - `911125000000` (dedução IPTU MCASP) → `11125000000` → IPTU
+ * - `91721010200` (FUNDEB sobre FPM STN) → `1721010200`  → TRANSFER_UNIAO_FPM
+ * - `917215001001` (FUNDEB sobre ICMS MCASP) → `17215001001` → TRANSFER_ESTADO_ICMS
+ */
+export function deducaoToReceitaCode(codigoDeducao: string): string {
+  const code = codigoDeducao.trim();
+  return code.startsWith("9") ? code.substring(1) : code;
+}
+
 /**
  * Determina o nível hierárquico baseado nos zeros à direita do código.
  * Mais zeros = nível mais alto (mais agregado).

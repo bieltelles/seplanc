@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Calculator,
   Database,
+  Scissors,
 } from "lucide-react";
 
 interface ConfigRow {
@@ -52,10 +53,17 @@ export default function ConfiguracoesPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Valores dos forms
+  // Valores dos forms — correção monetária
   const [tipoJuros, setTipoJuros] = useState<"compostos" | "simples">("compostos");
   const [padraoAtiva, setPadraoAtiva] = useState(false);
   const [anoBasePadrao, setAnoBasePadrao] = useState<number>(new Date().getFullYear());
+
+  // Valores dos forms — deduções (valores líquidos)
+  const [deducoesPadraoAtiva, setDeducoesPadraoAtiva] = useState(false);
+  const [deducoesIncluirFundeb, setDeducoesIncluirFundeb] = useState(true);
+  const [deducoesIncluirAbatimentos, setDeducoesIncluirAbatimentos] = useState(true);
+  const [deducoesIncluirIntra, setDeducoesIncluirIntra] = useState(false);
+  const [deducoesIncluirOutras, setDeducoesIncluirOutras] = useState(false);
 
   async function fetchConfig() {
     try {
@@ -84,6 +92,18 @@ export default function ConfiguracoesPage() {
         const parsed = parseInt(ab, 10);
         if (!Number.isNaN(parsed)) setAnoBasePadrao(parsed);
       }
+
+      // Deduções
+      const dpa = list.find((c) => c.chave === "deducoes_liquido_padrao_ativa")?.valor;
+      const dfu = list.find((c) => c.chave === "deducoes_incluir_fundeb")?.valor;
+      const dab = list.find((c) => c.chave === "deducoes_incluir_abatimentos")?.valor;
+      const din = list.find((c) => c.chave === "deducoes_incluir_intra")?.valor;
+      const dou = list.find((c) => c.chave === "deducoes_incluir_outras")?.valor;
+      setDeducoesPadraoAtiva(dpa === "true");
+      if (dfu !== undefined) setDeducoesIncluirFundeb(dfu === "true");
+      if (dab !== undefined) setDeducoesIncluirAbatimentos(dab === "true");
+      if (din !== undefined) setDeducoesIncluirIntra(din === "true");
+      if (dou !== undefined) setDeducoesIncluirOutras(dou === "true");
     } catch (err) {
       console.error(err);
     } finally {
@@ -146,6 +166,11 @@ export default function ConfiguracoesPage() {
           correcao_tipo_juros: tipoJuros,
           correcao_padrao_ativa: padraoAtiva ? "true" : "false",
           correcao_ano_base_padrao: String(anoBasePadrao),
+          deducoes_liquido_padrao_ativa: deducoesPadraoAtiva ? "true" : "false",
+          deducoes_incluir_fundeb: deducoesIncluirFundeb ? "true" : "false",
+          deducoes_incluir_abatimentos: deducoesIncluirAbatimentos ? "true" : "false",
+          deducoes_incluir_intra: deducoesIncluirIntra ? "true" : "false",
+          deducoes_incluir_outras: deducoesIncluirOutras ? "true" : "false",
         }),
       });
 
@@ -325,6 +350,147 @@ export default function ConfiguracoesPage() {
                   <div className="font-medium">Ativar correção monetária por padrão</div>
                   <div className="text-xs text-slate-500">
                     Quando marcado, novos usuários verão os valores já corrigidos ao abrir o sistema.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? "Salvando..." : "Salvar configurações"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Deduções (valores líquidos) */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scissors className="h-4 w-4" />
+              Deduções — Valores Líquidos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg bg-rose-50 p-4 text-sm">
+              <p className="mb-2 font-medium text-rose-800">Como funciona</p>
+              <ul className="list-disc space-y-1 pl-5 text-rose-700">
+                <li>
+                  A conta <strong>9</strong> do balancete agrupa todas as deduções
+                  (FUNDEB, restituições, devoluções, abatimentos, intraorçamentárias).
+                  Por padrão o sistema exibe valores <strong>brutos</strong> — receitas e
+                  deduções aparecem separadas.
+                </li>
+                <li>
+                  Ao ativar a toggle <strong>Líquido</strong> no topo, o sistema
+                  subtrai as deduções marcadas abaixo de cada categoria (IPTU, ISS,
+                  ICMS, FPM, ...) retornando o valor <strong>líquido</strong> arrecadado.
+                </li>
+                <li>
+                  O usuário pode alterar temporariamente o que deduzir clicando em
+                  "O que deduzir" ao lado da toggle. Esta tela define apenas o padrão
+                  inicial.
+                </li>
+                <li>
+                  A retenção do <strong>FUNDEB</strong> (EC 108/2020) é dedução
+                  constitucional sobre FPM, ITR, LC 87/96, ICMS, IPVA e IPI-Exp.
+                  Recomendado deixar marcada.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                O que subtrair das categorias (padrão)
+              </label>
+              <div className="space-y-2">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={deducoesIncluirFundeb}
+                    onChange={(e) => setDeducoesIncluirFundeb(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-rose-500"
+                  />
+                  <div>
+                    <div className="font-medium">FUNDEB</div>
+                    <div className="text-xs text-slate-500">
+                      Retenção constitucional sobre transferências (FPM, ITR, LC 87/96,
+                      ICMS, IPVA, IPI-Exportação). EC 108/2020.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={deducoesIncluirAbatimentos}
+                    onChange={(e) => setDeducoesIncluirAbatimentos(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-rose-500"
+                  />
+                  <div>
+                    <div className="font-medium">
+                      Abatimentos, restituições e devoluções
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Deduções sobre receita própria: IPTU, ISS, ITBI, taxas, dívida
+                      ativa, receita patrimonial e de serviços.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={deducoesIncluirIntra}
+                    onChange={(e) => setDeducoesIncluirIntra(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-rose-500"
+                  />
+                  <div>
+                    <div className="font-medium">Receitas intraorçamentárias</div>
+                    <div className="text-xs text-slate-500">
+                      Elimina dupla contagem em consolidações (código{" "}
+                      <code className="text-[10px]">97...</code>). Recomendado apenas
+                      para análises consolidadas.
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    checked={deducoesIncluirOutras}
+                    onChange={(e) => setDeducoesIncluirOutras(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-rose-500"
+                  />
+                  <div>
+                    <div className="font-medium">Outras deduções</div>
+                    <div className="text-xs text-slate-500">
+                      Demais deduções não enquadradas acima (SUS, convênios
+                      específicos, deduções de capital, etc.).
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Comportamento padrão da toggle Líquido
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={deducoesPadraoAtiva}
+                  onChange={(e) => setDeducoesPadraoAtiva(e.target.checked)}
+                  className="h-4 w-4 accent-rose-500"
+                />
+                <div>
+                  <div className="font-medium">
+                    Abrir sistema em modo Líquido por padrão
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Quando marcado, novos usuários verão os valores já líquidos das
+                    deduções selecionadas acima.
                   </div>
                 </div>
               </label>

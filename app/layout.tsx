@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { CorrectionProvider } from "@/components/providers/correction-provider";
+import { DeducoesProvider } from "@/components/providers/deducoes-provider";
 
 export const metadata: Metadata = {
   title: "SEMFAZ - Dashboard Financeiro",
@@ -17,10 +18,12 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className="font-sans antialiased">
         <CorrectionProvider>
-          <Sidebar />
-          <main className="ml-64 min-h-screen bg-slate-50">
-            {children}
-          </main>
+          <DeducoesProvider>
+            <Sidebar />
+            <main className="ml-64 min-h-screen bg-slate-50">
+              {children}
+            </main>
+          </DeducoesProvider>
         </CorrectionProvider>
       </body>
     </html>

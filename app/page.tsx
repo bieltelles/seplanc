@@ -9,6 +9,7 @@ import { BudgetExecution } from "@/components/dashboard/budget-execution";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { LoadingSpinner } from "@/components/shared/loading";
 import { useCorrection } from "@/components/providers/correction-provider";
+import { useDeducoes } from "@/components/providers/deducoes-provider";
 
 interface DashboardData {
   summary: {
@@ -29,6 +30,12 @@ interface DashboardData {
 
 export default function DashboardPage() {
   const { ativa: correcaoAtiva, anoBase, hydrated } = useCorrection();
+  const {
+    ativa: deducoesAtiva,
+    subtipos: deducoesSubtipos,
+    hydrated: deducoesHydrated,
+    toQueryString: deducoesQueryString,
+  } = useDeducoes();
   const [data, setData] = useState<DashboardData | null>(null);
   const [anos, setAnos] = useState<number[]>([]);
   const [selectedAno, setSelectedAno] = useState<number>(0);
@@ -44,7 +51,10 @@ export default function DashboardPage() {
           params.set("correcao", "1");
           if (pivot) params.set("anoBase", String(pivot));
         }
-        const res = await fetch(`/api/dashboard?${params}`);
+        const dq = deducoesQueryString();
+        const base = params.toString();
+        const url = `/api/dashboard?${base}${base && dq ? "&" : ""}${dq}`;
+        const res = await fetch(url);
         const json = await res.json();
         setData(json.data);
         setAnos(json.anos || []);
@@ -55,14 +65,24 @@ export default function DashboardPage() {
         setLoading(false);
       }
     },
-    [],
+    [deducoesQueryString],
   );
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !deducoesHydrated) return;
     fetchData(selectedAno || undefined, correcaoAtiva, anoBase);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [correcaoAtiva, anoBase, hydrated]);
+  }, [
+    correcaoAtiva,
+    anoBase,
+    hydrated,
+    deducoesHydrated,
+    deducoesAtiva,
+    deducoesSubtipos.FUNDEB,
+    deducoesSubtipos.ABATIMENTO,
+    deducoesSubtipos.INTRA,
+    deducoesSubtipos.OUTRAS,
+  ]);
 
   const handleAnoChange = (ano: number) => {
     setSelectedAno(ano);

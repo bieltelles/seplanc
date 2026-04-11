@@ -5,7 +5,16 @@ import type { ReceitaRow } from "@/lib/parsers/csv-receitas";
 import type { RreoRow } from "@/lib/parsers/xls-rreo";
 import type { RgfRow } from "@/lib/parsers/xls-rgf";
 import type { CorrectionContext } from "@/lib/ipca/context";
-import { expandCategoriaFilter } from "@/lib/constants/tax-categories";
+import {
+  classifyDeducaoSubtipo,
+  classifyRevenue,
+  deducaoToReceitaCode,
+  expandCategoriaFilter,
+} from "@/lib/constants/tax-categories";
+import {
+  type DeducoesContext,
+  hasAnySubtipoAtivo,
+} from "@/lib/deducoes/context";
 import {
   correctMonthlyRow,
   correctMonthlyValue,
@@ -224,7 +233,217 @@ const MONTH_COLS = [
   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
 ] as const;
 
-export async function getDashboardSummary(ano: number, ctx?: CorrectionContext | null) {
+// ---------------------------------------------------------------------------
+// Deduções (conta 9) — helpers para aplicar "valores líquidos"
+// ---------------------------------------------------------------------------
+
+/**
+ * Agregado mensal usado tanto para o total absorvido (aplicado nas categorias)
+ * quanto para cada bucket de categoria alvo ou para o restante que permanece na
+ * rubrica "DEDUCOES".
+ */
+interface DeducaoBucket {
+  acumulado: number;
+  orcado: number;
+  janeiro: number;
+  fevereiro: number;
+  marco: number;
+  abril: number;
+  maio: number;
+  junho: number;
+  julho: number;
+  agosto: number;
+  setembro: number;
+  outubro: number;
+  novembro: number;
+  dezembro: number;
+}
+
+interface DeducoesYearImpact {
+  /**
+   * Map categoria_tributaria → agregado das deduções absorvidas por aquela
+   * categoria (subtipo ativo em `deducoesCtx`). Valores são NEGATIVOS, pois
+   * as deduções já são armazenadas no banco com sinal negativo.
+   */
+  porCategoria: Map<string, DeducaoBucket>;
+  /** Soma das deduções absorvidas (aplicadas às categorias). */
+  absorvido: DeducaoBucket;
+  /**
+   * Soma das deduções que NÃO foram aplicadas (subtipo desmarcado). Essas
+   * permanecem na rubrica `DEDUCOES` do retorno, para o usuário continuar
+   * enxergando a rubrica com o "resto".
+   */
+  restante: DeducaoBucket;
+}
+
+function makeBucket(): DeducaoBucket {
+  return {
+    acumulado: 0,
+    orcado: 0,
+    janeiro: 0,
+    fevereiro: 0,
+    marco: 0,
+    abril: 0,
+    maio: 0,
+    junho: 0,
+    julho: 0,
+    agosto: 0,
+    setembro: 0,
+    outubro: 0,
+    novembro: 0,
+    dezembro: 0,
+  };
+}
+
+function addBucket(target: DeducaoBucket, src: DeducaoBucket): void {
+  target.acumulado += src.acumulado;
+  target.orcado += src.orcado;
+  target.janeiro += src.janeiro;
+  target.fevereiro += src.fevereiro;
+  target.marco += src.marco;
+  target.abril += src.abril;
+  target.maio += src.maio;
+  target.junho += src.junho;
+  target.julho += src.julho;
+  target.agosto += src.agosto;
+  target.setembro += src.setembro;
+  target.outubro += src.outubro;
+  target.novembro += src.novembro;
+  target.dezembro += src.dezembro;
+}
+
+/**
+ * Busca as linhas de dedução dos anos solicitados (is_deducao = 1, detalhe
+ * apenas) e as agrupa por categoria alvo conforme o contexto de deduções.
+ *
+ * Retorna um map `ano → DeducoesYearImpact`. Anos sem deduções ativas ficam
+ * ausentes do map.
+ *
+ * - A correção monetária é aplicada linha a linha, usando `correctMonthlyRow`.
+ * - Para mapear "dedução → categoria alvo" usamos `deducaoToReceitaCode` +
+ *   `classifyRevenue`. Funciona nos três formatos (STN 10d, intermediário 11d
+ *   e MCASP 11d/12d).
+ * - `classifyDeducaoSubtipo(classificacao, descricao)` define se a linha é
+ *   FUNDEB / ABATIMENTO / INTRA / OUTRAS. Se o subtipo não está ativo no
+ *   contexto, a linha vai para `restante` (continua em DEDUCOES).
+ */
+async function computeDeducoesImpact(
+  anos: number[],
+  deducoesCtx: DeducoesContext,
+  ctx?: CorrectionContext | null,
+): Promise<Map<number, DeducoesYearImpact>> {
+  const out = new Map<number, DeducoesYearImpact>();
+  if (anos.length === 0 || !hasAnySubtipoAtivo(deducoesCtx)) return out;
+
+  const db = getDb();
+  const placeholders = anos.map(() => "?").join(",");
+  const result = await db.execute({
+    sql: `SELECT exercicio_ano, classificacao, descricao,
+      SUM(janeiro) as janeiro, SUM(fevereiro) as fevereiro,
+      SUM(marco) as marco, SUM(abril) as abril,
+      SUM(maio) as maio, SUM(junho) as junho,
+      SUM(julho) as julho, SUM(agosto) as agosto,
+      SUM(setembro) as setembro, SUM(outubro) as outubro,
+      SUM(novembro) as novembro, SUM(dezembro) as dezembro,
+      SUM(acumulado) as acumulado, SUM(orcado) as orcado
+    FROM receitas
+    WHERE exercicio_ano IN (${placeholders})
+      AND is_header = 0
+      AND is_deducao = 1
+    GROUP BY exercicio_ano, classificacao, descricao`,
+    args: anos,
+  });
+  const rows = result.rows as unknown as (Record<string, number> & {
+    exercicio_ano: number;
+    classificacao: string;
+    descricao: string | null;
+  })[];
+
+  const rowToBucket = (r: (typeof rows)[number]): DeducaoBucket => {
+    const applyCorrection = ctx && shouldCorrectYear(r.exercicio_ano, ctx.currentYear);
+    if (applyCorrection) {
+      const corr = correctMonthlyRow(
+        r as unknown as Record<string, unknown>,
+        r.exercicio_ano,
+        ctx!.ipcaMap,
+        { tipoJuros: ctx!.tipoJuros, currentYear: ctx!.currentYear },
+      );
+      return {
+        acumulado: corr.acumulado,
+        orcado: corr.orcado,
+        janeiro: corr.janeiro,
+        fevereiro: corr.fevereiro,
+        marco: corr.marco,
+        abril: corr.abril,
+        maio: corr.maio,
+        junho: corr.junho,
+        julho: corr.julho,
+        agosto: corr.agosto,
+        setembro: corr.setembro,
+        outubro: corr.outubro,
+        novembro: corr.novembro,
+        dezembro: corr.dezembro,
+      };
+    }
+    return {
+      acumulado: Number(r.acumulado) || 0,
+      orcado: Number(r.orcado) || 0,
+      janeiro: Number(r.janeiro) || 0,
+      fevereiro: Number(r.fevereiro) || 0,
+      marco: Number(r.marco) || 0,
+      abril: Number(r.abril) || 0,
+      maio: Number(r.maio) || 0,
+      junho: Number(r.junho) || 0,
+      julho: Number(r.julho) || 0,
+      agosto: Number(r.agosto) || 0,
+      setembro: Number(r.setembro) || 0,
+      outubro: Number(r.outubro) || 0,
+      novembro: Number(r.novembro) || 0,
+      dezembro: Number(r.dezembro) || 0,
+    };
+  };
+
+  for (const r of rows) {
+    let impact = out.get(r.exercicio_ano);
+    if (!impact) {
+      impact = {
+        porCategoria: new Map(),
+        absorvido: makeBucket(),
+        restante: makeBucket(),
+      };
+      out.set(r.exercicio_ano, impact);
+    }
+
+    const code = String(r.classificacao || "");
+    const desc = String(r.descricao || "");
+    const subtipo = classifyDeducaoSubtipo(code, desc);
+    const enabled = deducoesCtx.subtipos[subtipo] === true;
+
+    const bucket = rowToBucket(r);
+
+    if (!enabled) {
+      addBucket(impact.restante, bucket);
+      continue;
+    }
+
+    const targetCat = classifyRevenue(deducaoToReceitaCode(code));
+    let catBucket = impact.porCategoria.get(targetCat);
+    if (!catBucket) {
+      catBucket = makeBucket();
+      impact.porCategoria.set(targetCat, catBucket);
+    }
+    addBucket(catBucket, bucket);
+    addBucket(impact.absorvido, bucket);
+  }
+
+  return out;
+}
+
+export async function getDashboardSummary(
+  ano: number,
+  ctx?: CorrectionContext | null,
+  deducoesCtx?: DeducoesContext | null,
+) {
   await ensureSchema();
   const db = getDb();
 
@@ -290,7 +509,11 @@ export async function getDashboardSummary(ano: number, ctx?: CorrectionContext |
       })
     : null;
 
-  const byCategory = byCategoryRaw.map((row) => {
+  const byCategory: {
+    categoria_tributaria: string;
+    total: number;
+    orcado_total: number;
+  }[] = byCategoryRaw.map((row) => {
     const r = row as unknown as Record<string, number>;
     if (applyCorrection) {
       const corrected = correctMonthlyRow({ ...r, orcado: r.orcado_total }, ano, ctx.ipcaMap, {
@@ -315,9 +538,54 @@ export async function getDashboardSummary(ano: number, ctx?: CorrectionContext |
 
   const months = rcFinal ? MONTH_COLS.map((m) => (rcFinal[m] as number) || 0) : [];
 
-  const totalOrcado = (rcFinal?.orcado as number) || 0;
-  const totalArrecadado = (rcFinal?.acumulado as number) || 0;
+  let totalOrcado = (rcFinal?.orcado as number) || 0;
+  let totalArrecadado = (rcFinal?.acumulado as number) || 0;
   const totalDeducoes = (deducoesFinal?.acumulado as number) || 0;
+
+  // -----------------------------------------------------------------------
+  // Aplica deduções por categoria (toggle "valores líquidos").
+  // -----------------------------------------------------------------------
+  const aplicarDeducoes = hasAnySubtipoAtivo(deducoesCtx);
+  if (aplicarDeducoes && deducoesCtx) {
+    const impactMap = await computeDeducoesImpact([ano], deducoesCtx, ctx);
+    const impact = impactMap.get(ano);
+    if (impact) {
+      const byCatMap = new Map<string, (typeof byCategory)[number]>();
+      for (const c of byCategory) byCatMap.set(c.categoria_tributaria, c);
+
+      for (const [cat, bucket] of impact.porCategoria) {
+        let row = byCatMap.get(cat);
+        if (!row) {
+          row = { categoria_tributaria: cat, total: 0, orcado_total: 0 };
+          byCategory.push(row);
+          byCatMap.set(cat, row);
+        }
+        // bucket.acumulado é NEGATIVO (deduções), somar aqui já subtrai.
+        row.total += bucket.acumulado;
+        row.orcado_total += bucket.orcado;
+      }
+
+      // A rubrica DEDUCOES continua exibindo apenas o "restante" (deduções
+      // cujo subtipo está desmarcado). Se tudo foi absorvido, zera/remove.
+      const dedRow = byCatMap.get("DEDUCOES");
+      if (dedRow) {
+        dedRow.total = impact.restante.acumulado;
+        dedRow.orcado_total = impact.restante.orcado;
+      }
+
+      // totalArrecadado/months recebem o absorvido (negativo).
+      totalArrecadado += impact.absorvido.acumulado;
+      for (let i = 0; i < 12; i++) {
+        months[i] += (impact.absorvido as unknown as Record<string, number>)[MONTH_COLS[i]] || 0;
+      }
+      totalOrcado += impact.absorvido.orcado;
+    }
+  }
+
+  // Remove linhas residuais de DEDUCOES com total ~ 0 (todas absorvidas).
+  const byCategoryFinal = byCategory
+    .filter((c) => !(c.categoria_tributaria === "DEDUCOES" && Math.abs(c.total) < 1))
+    .sort((a, b) => b.total - a.total);
 
   return {
     ano,
@@ -325,9 +593,10 @@ export async function getDashboardSummary(ano: number, ctx?: CorrectionContext |
     totalArrecadado,
     totalDeducoes,
     execucaoOrcamentaria: totalOrcado > 0 ? totalArrecadado / totalOrcado : 0,
-    byCategory,
+    byCategory: byCategoryFinal,
     monthlyTotals: months,
     correcaoAplicada: !!applyCorrection,
+    deducoesAplicadas: aplicarDeducoes,
   };
 }
 
@@ -335,9 +604,15 @@ export async function getMonthlyComparison(
   ano1: number,
   ano2: number,
   ctx?: CorrectionContext | null,
+  deducoesCtx?: DeducoesContext | null,
 ) {
   await ensureSchema();
   const db = getDb();
+
+  const aplicarDeducoes = hasAnySubtipoAtivo(deducoesCtx);
+  const impactMap = aplicarDeducoes && deducoesCtx
+    ? await computeDeducoesImpact([ano1, ano2], deducoesCtx, ctx)
+    : null;
 
   const getMonthly = async (ano: number) => {
     const result = await db.execute({
@@ -351,14 +626,24 @@ export async function getMonthlyComparison(
     const row = result.rows[0] as unknown as Record<string, number> | undefined;
     if (!row) return MONTH_COLS.map(() => 0);
 
+    let months: number[];
     if (ctx && shouldCorrectYear(ano, ctx.currentYear)) {
       const corrected = correctMonthlyRow(row, ano, ctx.ipcaMap, {
         tipoJuros: ctx.tipoJuros,
         currentYear: ctx.currentYear,
       });
-      return MONTH_COLS.map((m) => corrected[m] || 0);
+      months = MONTH_COLS.map((m) => corrected[m] || 0);
+    } else {
+      months = MONTH_COLS.map((m) => (row[m] as number) || 0);
     }
-    return MONTH_COLS.map((m) => (row[m] as number) || 0);
+
+    const impact = impactMap?.get(ano);
+    if (impact) {
+      for (let i = 0; i < 12; i++) {
+        months[i] += (impact.absorvido as unknown as Record<string, number>)[MONTH_COLS[i]] || 0;
+      }
+    }
+    return months;
   };
 
   return {
@@ -371,6 +656,7 @@ export async function getCategoryByMonth(
   ano: number,
   categoria: string,
   ctx?: CorrectionContext | null,
+  deducoesCtx?: DeducoesContext | null,
 ) {
   await ensureSchema();
   const db = getDb();
@@ -392,16 +678,43 @@ export async function getCategoryByMonth(
   const row = result.rows[0] as unknown as Record<string, number> | undefined;
   if (!row) return undefined;
 
+  let finalRow: Record<string, number>;
   if (ctx && shouldCorrectYear(ano, ctx.currentYear)) {
-    return correctMonthlyRow(row, ano, ctx.ipcaMap, {
+    finalRow = correctMonthlyRow(row, ano, ctx.ipcaMap, {
       tipoJuros: ctx.tipoJuros,
       currentYear: ctx.currentYear,
-    });
+    }) as unknown as Record<string, number>;
+  } else {
+    finalRow = { ...row };
   }
-  return row;
+
+  // Aplica deduções: soma as deduções cujo subtipo está ativo E cuja
+  // categoria alvo bate com o filtro solicitado.
+  if (hasAnySubtipoAtivo(deducoesCtx) && deducoesCtx) {
+    const impactMap = await computeDeducoesImpact([ano], deducoesCtx, ctx);
+    const impact = impactMap.get(ano);
+    if (impact) {
+      const catSet = new Set(cats);
+      for (const [cat, bucket] of impact.porCategoria) {
+        if (!catSet.has(cat)) continue;
+        finalRow.acumulado = (finalRow.acumulado || 0) + bucket.acumulado;
+        finalRow.orcado = (finalRow.orcado || 0) + bucket.orcado;
+        for (const m of MONTH_COLS) {
+          finalRow[m] =
+            (finalRow[m] || 0) +
+            ((bucket as unknown as Record<string, number>)[m] || 0);
+        }
+      }
+    }
+  }
+
+  return finalRow;
 }
 
-export async function getYearlyTrend(ctx?: CorrectionContext | null) {
+export async function getYearlyTrend(
+  ctx?: CorrectionContext | null,
+  deducoesCtx?: DeducoesContext | null,
+) {
   await ensureSchema();
   const db = getDb();
   // Busca dados mensais para permitir correção consistente por mês
@@ -415,7 +728,7 @@ export async function getYearlyTrend(ctx?: CorrectionContext | null) {
   `);
   const rows = result.rows as unknown as (Record<string, number> & { ano: number })[];
 
-  return rows.map((r) => {
+  const base = rows.map((r) => {
     if (ctx && shouldCorrectYear(r.ano, ctx.currentYear)) {
       const corrected = correctMonthlyRow(r, r.ano, ctx.ipcaMap, {
         tipoJuros: ctx.tipoJuros,
@@ -431,6 +744,20 @@ export async function getYearlyTrend(ctx?: CorrectionContext | null) {
       ano: r.ano,
       receita_corrente: (r.acumulado as number) || 0,
       orcado: (r.orcado as number) || 0,
+    };
+  });
+
+  if (!hasAnySubtipoAtivo(deducoesCtx) || !deducoesCtx) return base;
+
+  const anos = base.map((b) => b.ano);
+  const impactMap = await computeDeducoesImpact(anos, deducoesCtx, ctx);
+  return base.map((b) => {
+    const impact = impactMap.get(b.ano);
+    if (!impact) return b;
+    return {
+      ano: b.ano,
+      receita_corrente: b.receita_corrente + impact.absorvido.acumulado,
+      orcado: b.orcado + impact.absorvido.orcado,
     };
   });
 }
@@ -581,6 +908,7 @@ export async function getUploadHistory() {
 export async function getReceitasSummaryByCategory(
   anos: number[],
   ctx?: CorrectionContext | null,
+  deducoesCtx?: DeducoesContext | null,
 ) {
   await ensureSchema();
   const db = getDb();
@@ -605,40 +933,176 @@ export async function getReceitasSummaryByCategory(
     ORDER BY exercicio_ano, total_arrecadado DESC`,
     args: anos,
   });
-  const rows = result.rows as unknown as (Record<string, number> & {
+  const rawRows = result.rows as unknown as (Record<string, number> & {
     exercicio_ano: number;
     categoria_tributaria: string;
   })[];
 
-  if (!ctx) return rows;
+  interface Row {
+    exercicio_ano: number;
+    categoria_tributaria: string;
+    total_arrecadado: number;
+    total_orcado: number;
+    janeiro: number;
+    fevereiro: number;
+    marco: number;
+    abril: number;
+    maio: number;
+    junho: number;
+    julho: number;
+    agosto: number;
+    setembro: number;
+    outubro: number;
+    novembro: number;
+    dezembro: number;
+  }
 
-  return rows.map((row) => {
-    if (!shouldCorrectYear(row.exercicio_ano, ctx.currentYear)) return row;
-    const corrected = correctMonthlyRow(row, row.exercicio_ano, ctx.ipcaMap, {
-      tipoJuros: ctx.tipoJuros,
-      currentYear: ctx.currentYear,
-    });
-    return {
-      ...row,
-      janeiro: corrected.janeiro,
-      fevereiro: corrected.fevereiro,
-      marco: corrected.marco,
-      abril: corrected.abril,
-      maio: corrected.maio,
-      junho: corrected.junho,
-      julho: corrected.julho,
-      agosto: corrected.agosto,
-      setembro: corrected.setembro,
-      outubro: corrected.outubro,
-      novembro: corrected.novembro,
-      dezembro: corrected.dezembro,
-      total_arrecadado: corrected.acumulado,
-      total_orcado: correctOrcado(row.total_orcado as number || 0, row.exercicio_ano, ctx.ipcaMap, {
-        tipoJuros: ctx.tipoJuros,
-        currentYear: ctx.currentYear,
-      }),
-    };
+  const toRow = (r: (typeof rawRows)[number]): Row => ({
+    exercicio_ano: r.exercicio_ano,
+    categoria_tributaria: r.categoria_tributaria,
+    total_arrecadado: Number(r.total_arrecadado) || 0,
+    total_orcado: Number(r.total_orcado) || 0,
+    janeiro: Number(r.janeiro) || 0,
+    fevereiro: Number(r.fevereiro) || 0,
+    marco: Number(r.marco) || 0,
+    abril: Number(r.abril) || 0,
+    maio: Number(r.maio) || 0,
+    junho: Number(r.junho) || 0,
+    julho: Number(r.julho) || 0,
+    agosto: Number(r.agosto) || 0,
+    setembro: Number(r.setembro) || 0,
+    outubro: Number(r.outubro) || 0,
+    novembro: Number(r.novembro) || 0,
+    dezembro: Number(r.dezembro) || 0,
   });
+
+  // 1) Aplica correção monetária (se houver).
+  const corrected: Row[] = ctx
+    ? rawRows.map((row) => {
+        if (!shouldCorrectYear(row.exercicio_ano, ctx.currentYear)) return toRow(row);
+        const c = correctMonthlyRow(row, row.exercicio_ano, ctx.ipcaMap, {
+          tipoJuros: ctx.tipoJuros,
+          currentYear: ctx.currentYear,
+        });
+        return {
+          exercicio_ano: row.exercicio_ano,
+          categoria_tributaria: row.categoria_tributaria,
+          janeiro: c.janeiro,
+          fevereiro: c.fevereiro,
+          marco: c.marco,
+          abril: c.abril,
+          maio: c.maio,
+          junho: c.junho,
+          julho: c.julho,
+          agosto: c.agosto,
+          setembro: c.setembro,
+          outubro: c.outubro,
+          novembro: c.novembro,
+          dezembro: c.dezembro,
+          total_arrecadado: c.acumulado,
+          total_orcado: correctOrcado(
+            (row.total_orcado as number) || 0,
+            row.exercicio_ano,
+            ctx.ipcaMap,
+            { tipoJuros: ctx.tipoJuros, currentYear: ctx.currentYear },
+          ),
+        };
+      })
+    : rawRows.map(toRow);
+
+  // 2) Aplica deduções por categoria alvo (se solicitado).
+  if (!hasAnySubtipoAtivo(deducoesCtx) || !deducoesCtx) return corrected;
+
+  const impactMap = await computeDeducoesImpact(anos, deducoesCtx, ctx);
+
+  // Índice (ano, categoria) → row
+  const indexRow = new Map<string, Row>();
+  for (const r of corrected) {
+    indexRow.set(`${r.exercicio_ano}|${r.categoria_tributaria}`, r);
+  }
+
+  const getOrCreate = (ano: number, cat: string): Row => {
+    const key = `${ano}|${cat}`;
+    const existing = indexRow.get(key);
+    if (existing) return existing;
+    const r: Row = {
+      exercicio_ano: ano,
+      categoria_tributaria: cat,
+      total_arrecadado: 0,
+      total_orcado: 0,
+      janeiro: 0,
+      fevereiro: 0,
+      marco: 0,
+      abril: 0,
+      maio: 0,
+      junho: 0,
+      julho: 0,
+      agosto: 0,
+      setembro: 0,
+      outubro: 0,
+      novembro: 0,
+      dezembro: 0,
+    };
+    corrected.push(r);
+    indexRow.set(key, r);
+    return r;
+  };
+
+  for (const ano of anos) {
+    const impact = impactMap.get(ano);
+    if (!impact) continue;
+
+    // Absorvidas: somam nas categorias alvo.
+    for (const [cat, bucket] of impact.porCategoria) {
+      const target = getOrCreate(ano, cat);
+      target.total_arrecadado += bucket.acumulado;
+      target.total_orcado += bucket.orcado;
+      target.janeiro += bucket.janeiro;
+      target.fevereiro += bucket.fevereiro;
+      target.marco += bucket.marco;
+      target.abril += bucket.abril;
+      target.maio += bucket.maio;
+      target.junho += bucket.junho;
+      target.julho += bucket.julho;
+      target.agosto += bucket.agosto;
+      target.setembro += bucket.setembro;
+      target.outubro += bucket.outubro;
+      target.novembro += bucket.novembro;
+      target.dezembro += bucket.dezembro;
+    }
+
+    // Restante: fica em DEDUCOES (ou remove se ~0).
+    const dedKey = `${ano}|DEDUCOES`;
+    const dedRow = indexRow.get(dedKey);
+    if (dedRow) {
+      dedRow.total_arrecadado = impact.restante.acumulado;
+      dedRow.total_orcado = impact.restante.orcado;
+      dedRow.janeiro = impact.restante.janeiro;
+      dedRow.fevereiro = impact.restante.fevereiro;
+      dedRow.marco = impact.restante.marco;
+      dedRow.abril = impact.restante.abril;
+      dedRow.maio = impact.restante.maio;
+      dedRow.junho = impact.restante.junho;
+      dedRow.julho = impact.restante.julho;
+      dedRow.agosto = impact.restante.agosto;
+      dedRow.setembro = impact.restante.setembro;
+      dedRow.outubro = impact.restante.outubro;
+      dedRow.novembro = impact.restante.novembro;
+      dedRow.dezembro = impact.restante.dezembro;
+    }
+  }
+
+  // Remove linhas DEDUCOES com valor ~ 0 após absorção.
+  const result2 = corrected.filter(
+    (r) =>
+      !(r.categoria_tributaria === "DEDUCOES" && Math.abs(r.total_arrecadado) < 1),
+  );
+  // Mantém ordenação: por ano crescente, depois total desc.
+  result2.sort((a, b) => {
+    if (a.exercicio_ano !== b.exercicio_ano) return a.exercicio_ano - b.exercicio_ano;
+    return b.total_arrecadado - a.total_arrecadado;
+  });
+  return result2;
 }
 
 export async function getAvailableYears() {
