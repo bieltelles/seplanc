@@ -1,6 +1,6 @@
 /**
  * Helpers análogos para o RGF. O RGF é persistido com a chave extra
- * `entidade` ('executivo' ou 'camara').
+ * `entidade` ('prefeitura' ou 'camara') — ver lib/parsers/detect-file-type.ts.
  */
 
 import { getDb } from "@/lib/db/connection";
@@ -73,7 +73,7 @@ export async function findRgfLinha(
 
 export async function getLatestQuadrimestre(
   ano: number,
-  entidade: string = "executivo",
+  entidade: string = "prefeitura",
 ): Promise<number | null> {
   const db = getDb();
   const result = await db.execute({

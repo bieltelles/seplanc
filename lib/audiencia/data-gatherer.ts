@@ -333,10 +333,12 @@ async function fetchPessoal(
     fetchRgfRowCols(ano, quad, entidade, "RGF-Anexo 01", 56),
   ]);
   if (Object.keys(l53).length === 0) return null;
+  // SICONFI armazena percentuais em escala 0-100 (ex.: 39,66). O consumidor
+  // espera fração decimal (0,3966) — divide por 100 na borda.
   return {
     dtp: l53[1] ?? 0,
     rclAjustada: l52[1] ?? 0,
-    percentualDtp: l53[2] ?? 0,
+    percentualDtp: (l53[2] ?? 0) / 100,
     limiteMaximo: l54[1] ?? 0,
     limitePrudencial: l55[1] ?? 0,
     limiteAlerta: l56[1] ?? 0,
@@ -371,13 +373,15 @@ async function fetchDivida(
     fetchRgfRowCols(ano, quad, entidade, "RGF-Anexo 02", 51),
   ]);
   if (Object.keys(l20).length === 0) return null;
+  // SICONFI armazena percentuais em escala 0-100 (ex.: 12,74). O consumidor
+  // espera fração decimal (0,1274) — divide por 100 na borda.
   return {
     dc: l20[col] ?? 0,
     deducoesTotal: l39[col] ?? 0,
     dcl: l45[col] ?? 0,
     rclAjustada: l48[col] ?? 0,
-    percentualDc: l49[col] ?? 0,
-    percentualDcl: l50[col] ?? 0,
+    percentualDc: (l49[col] ?? 0) / 100,
+    percentualDcl: (l50[col] ?? 0) / 100,
     limiteMaximo: l51[col] ?? 0,
     disponibilidadeCaixa: l40[col] ?? 0,
     restosAPagar: l42[col] ?? 0,
@@ -550,7 +554,10 @@ export async function gatherAudienciaData(
   const resultados = await fetchResultados(ano, bim);
 
   // ---- RGF ----
-  const entidade = "executivo";
+  // O pipeline de upload (app/api/upload/route.ts) persiste `entidade` como
+  // "prefeitura" ou "camara" (vide lib/parsers/detect-file-type.ts). Para a
+  // audiência do Poder Executivo lemos a entidade "prefeitura".
+  const entidade = "prefeitura";
   const [pessoal, dividaConsolidada, composicaoDivida, operacoesCredito] =
     await Promise.all([
       fetchPessoal(ano, quadrimestre, entidade),
