@@ -3,18 +3,18 @@
  *
  * Recebe um `AudienciaData` já pronto (vindo de `gatherAudienciaData`) e
  * produz um arquivo .pptx com os 44 slides exigidos pelo rito da Câmara
- * Municipal de São Luís.
+ * Municipal de São Luís:
  *
- * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
- * -------------------------------
- * Por ora os slides 1 a 40 (capa, apresentador, objetivo, ofícios, RREO
- * intro/notas, receitas tributárias/contribuições/patrimoniais/outras,
- * resumo de próprias, transferências, receita total, dependência
- * financeira, balanço orçamentário, RCL, resultados, indicadores de
- * educação e saúde, RGF intro, despesas de pessoal e dívida
- * consolidada) estão implementados. Os slides 41 a 44 (composição da
- * dívida, garantias, operações de crédito e fechamento) serão
- * adicionados em commits subsequentes.
+ * 1 a 7     — capa, apresentador, objetivo, ofícios, RREO intro/notas
+ * 8 a 17    — receitas tributárias, contribuições, patrimoniais, outras
+ * 18        — resumo das receitas próprias
+ * 19 a 26   — transferências correntes + resumo
+ * 27 a 28   — receita total e dependência financeira
+ * 29 a 32   — balanço orçamentário (intro, receitas, despesas, resultado)
+ * 33 a 35   — RCL e resultados primário/nominal
+ * 36 a 37   — indicadores constitucionais (educação e saúde)
+ * 38 a 43   — RGF: intro, pessoal, dívida, composição, garantias, operações
+ * 44        — fechamento
  */
 
 import PptxGenJS from "pptxgenjs";
@@ -3840,18 +3840,680 @@ function addSlide40DividaConsolidada(
 }
 
 // =========================================================================
+// Slide 41 — RGF: Composição da Dívida
+// =========================================================================
+
+/**
+ * Detalha a composição da dívida consolidada por tipo, comparando os
+ * saldos do quadrimestre anterior com os do quadrimestre atual e
+ * mostrando a diferença (colorida verde quando reduziu e vermelho
+ * quando aumentou — redução é favorável).
+ */
+function addSlide41ComposicaoDivida(
+  pres: Pptx,
+  data: AudienciaData,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RGF  —  COMPOSIÇÃO DA DÍVIDA");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  slide.addText("Composição da Dívida Consolidada por Tipo", {
+    x: 0.5,
+    y: 1.3,
+    w: SLIDE_W - 1.0,
+    h: 0.5,
+    fontFace: FONT,
+    fontSize: 20,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  const linhas = data.composicaoDivida;
+  if (linhas.length === 0) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados detalhados da composição da dívida não puderam ser " +
+        "carregados para este período.",
+    );
+    addFooterBar(pres, slide, data, 41);
+    return;
+  }
+
+  const anoAtual = data.params.ano;
+  const anoAnterior = anoAtual - 1;
+  const colLabelAtual = periodoColunaLabel(
+    data.params.quadrimestre,
+    anoAtual,
+  );
+  const colLabelAnterior = periodoColunaLabel(
+    data.params.quadrimestre,
+    anoAnterior,
+  );
+
+  // Cabeçalho
+  const headerOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+  const headerRow = [
+    { text: "TIPO", options: { ...headerOpts, align: "left" as const } },
+    { text: colLabelAnterior, options: headerOpts },
+    { text: colLabelAtual, options: headerOpts },
+    { text: "DIFERENÇA", options: headerOpts },
+  ];
+
+  // Totais
+  const totalAnterior = linhas.reduce((s, l) => s + l.anoAnterior, 0);
+  const totalAtual = linhas.reduce((s, l) => s + l.anoAtual, 0);
+  const totalDiferenca = totalAtual - totalAnterior;
+
+  const bodyRows = linhas.map((l, idx) => {
+    const diferenca = l.anoAtual - l.anoAnterior;
+    const fill = idx % 2 === 0 ? COLORS.bg : COLORS.white;
+    // Atenção: para dívida, aumento é desfavorável (vermelho).
+    const diffColor = diferenca <= 0 ? COLORS.success : COLORS.danger;
+    return [
+      {
+        text: l.tipo,
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "left" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(l.anoAnterior),
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(l.anoAtual),
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(diferenca),
+        options: {
+          bold: true,
+          color: diffColor,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+    ];
+  });
+
+  const totalRowOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.accent },
+    valign: "middle" as const,
+  };
+  const totalRow = [
+    { text: "TOTAL", options: { ...totalRowOpts, align: "left" as const } },
+    {
+      text: fmtMi(totalAnterior),
+      options: { ...totalRowOpts, align: "right" as const },
+    },
+    {
+      text: fmtMi(totalAtual),
+      options: { ...totalRowOpts, align: "right" as const },
+    },
+    {
+      text: fmtMi(totalDiferenca),
+      options: { ...totalRowOpts, align: "right" as const },
+    },
+  ];
+
+  slide.addTable([headerRow, ...bodyRows, totalRow], {
+    x: 0.8,
+    y: 1.95,
+    w: SLIDE_W - 1.6,
+    rowH: 0.55,
+    fontFace: FONT,
+    fontSize: 13,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [4.733, 2.4, 2.4, 2.2],
+  });
+
+  slide.addText(
+    "Redução dos saldos é favorável (verde) e aumento é desfavorável " +
+      "(vermelho). Fonte: RGF Anexo 02 — Demonstrativo da Dívida " +
+      "Consolidada Líquida.",
+    {
+      x: 0.8,
+      y: SLIDE_H - 1.05,
+      w: SLIDE_W - 1.6,
+      h: 0.4,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "left",
+    },
+  );
+
+  addFooterBar(pres, slide, data, 41);
+}
+
+// =========================================================================
+// Slide 42 — RGF: Garantias e Contragarantias
+// =========================================================================
+
+/**
+ * Slide explicativo sobre o limite legal de concessão de garantias
+ * previsto na Resolução SF nº 43/2001 e no art. 40 da LRF. Os dados
+ * do RGF Anexo 03 ainda não estão contemplados no `AudienciaData`,
+ * portanto este slide apresenta apenas o enquadramento legal e a
+ * base normativa.
+ */
+function addSlide42Garantias(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RGF  —  GARANTIAS E CONTRAGARANTIAS");
+
+  slide.addText("Garantias e Contragarantias", {
+    x: 1.0,
+    y: 1.15,
+    w: SLIDE_W - 2.0,
+    h: 0.7,
+    fontFace: FONT,
+    fontSize: 28,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  slide.addText(
+    "A concessão de garantias por entes federados está sujeita aos " +
+      "limites previstos na Resolução do Senado Federal nº 43/2001 " +
+      "e ao regramento do art. 40 da LRF, que exige contrapartida " +
+      "em contragarantias de valor igual ou superior. O saldo das " +
+      "garantias concedidas, somado às contragarantias recebidas, " +
+      "compõe o RGF Anexo 03 e é confrontado contra o limite de 22% " +
+      "da Receita Corrente Líquida.",
+    {
+      x: 1.0,
+      y: 2.1,
+      w: SLIDE_W - 2.0,
+      h: 2.8,
+      fontFace: FONT,
+      fontSize: 16,
+      color: COLORS.dark,
+      align: "justify",
+      valign: "top",
+      paraSpaceAfter: 8,
+    },
+  );
+
+  // Caixa de destaque com o limite
+  slide.addShape(pres.ShapeType.rect, {
+    x: 2.5,
+    y: 5.0,
+    w: SLIDE_W - 5.0,
+    h: 1.0,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("LIMITE MÁXIMO DE GARANTIAS CONCEDIDAS", {
+    x: 2.5,
+    y: 5.05,
+    w: SLIDE_W - 5.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    bold: true,
+    charSpacing: 3,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText("22% da Receita Corrente Líquida", {
+    x: 2.5,
+    y: 5.4,
+    w: SLIDE_W - 5.0,
+    h: 0.55,
+    fontFace: FONT,
+    fontSize: 22,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Caixa com base legal
+  slide.addShape(pres.ShapeType.rect, {
+    x: 3.0,
+    y: 6.3,
+    w: SLIDE_W - 6.0,
+    h: 0.55,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 1.5 },
+  });
+  slide.addText(
+    "LC 101/2000, Art. 40  •  Resolução SF nº 43/2001  •  RGF Anexo 03",
+    {
+      x: 3.0,
+      y: 6.3,
+      w: SLIDE_W - 6.0,
+      h: 0.55,
+      fontFace: FONT,
+      fontSize: 12,
+      bold: true,
+      italic: true,
+      color: COLORS.primary,
+      align: "center",
+      valign: "middle",
+    },
+  );
+
+  addFooterBar(pres, slide, data, 42);
+}
+
+// =========================================================================
+// Slide 43 — RGF: Operações de Crédito
+// =========================================================================
+
+/**
+ * Apresenta as operações de crédito contratadas no exercício em
+ * percentual da RCL ajustada e compara com os limites legais do
+ * Senado: limite geral de 16% e limite de alerta de 14,4%.
+ */
+function addSlide43OperacoesCredito(
+  pres: Pptx,
+  data: AudienciaData,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RGF  —  OPERAÇÕES DE CRÉDITO");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const op = data.operacoesCredito;
+  if (!op) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RGF Anexo 04 (operações de crédito) não puderam " +
+        "ser carregados para este período.",
+    );
+    addFooterBar(pres, slide, data, 43);
+    return;
+  }
+
+  const pct = op.rclAjustada > 0 ? op.valorRealizado / op.rclAjustada : 0;
+  const limGeralRcl = 0.16;
+  const limAlertaRcl = 0.144;
+  const ultrapassouGeral = pct > limGeralRcl;
+  const ultrapassouAlerta = pct > limAlertaRcl;
+
+  const statusLabel = ultrapassouGeral
+    ? "LIMITE GERAL ULTRAPASSADO"
+    : ultrapassouAlerta
+      ? "LIMITE DE ALERTA ULTRAPASSADO"
+      : "ABAIXO DO LIMITE DE ALERTA";
+  const statusColor = ultrapassouGeral
+    ? "FFA0A0"
+    : ultrapassouAlerta
+      ? "FFCE9E"
+      : COLORS.gold;
+
+  // Banner com o % realizado / RCL ajustada
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 2.0,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("OPERAÇÕES DE CRÉDITO  /  RCL AJUSTADA", {
+    x: 1.5,
+    y: 1.5,
+    w: SLIDE_W - 3.0,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtPct(pct), {
+    x: 1.5,
+    y: 1.95,
+    w: SLIDE_W - 3.0,
+    h: 1.05,
+    fontFace: FONT,
+    fontSize: 44,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+  slide.addText(statusLabel, {
+    x: 1.5,
+    y: 3.0,
+    w: SLIDE_W - 3.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: statusColor,
+    align: "center",
+  });
+
+  // Linha Realizado / RCL Ajustada em rich-text
+  slide.addText(
+    [
+      {
+        text: "Realizado: ",
+        options: { color: COLORS.muted, fontSize: 12, italic: true },
+      },
+      {
+        text: fmtMi(op.valorRealizado),
+        options: { color: COLORS.dark, fontSize: 13, bold: true },
+      },
+      { text: "          ", options: { fontSize: 13 } },
+      {
+        text: "RCL Ajustada: ",
+        options: { color: COLORS.muted, fontSize: 12, italic: true },
+      },
+      {
+        text: fmtMi(op.rclAjustada),
+        options: { color: COLORS.dark, fontSize: 13, bold: true },
+      },
+    ],
+    {
+      x: 1.5,
+      y: 3.55,
+      w: SLIDE_W - 3.0,
+      h: 0.35,
+      fontFace: FONT,
+      align: "center",
+    },
+  );
+
+  // Tabela com os 2 limites
+  const headerOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+  const headerRow = [
+    { text: "LIMITE", options: { ...headerOpts, align: "left" as const } },
+    { text: "% RCL", options: headerOpts },
+    { text: "VALOR", options: headerOpts },
+    { text: "STATUS", options: headerOpts },
+  ];
+
+  const makeLimiteRow = (
+    label: string,
+    limitePct: number,
+    limiteValor: number,
+    ultrapassou: boolean,
+    idx: number,
+  ) => {
+    const fill = idx % 2 === 0 ? COLORS.bg : COLORS.white;
+    const statusCor = ultrapassou ? COLORS.danger : COLORS.success;
+    return [
+      {
+        text: label,
+        options: {
+          bold: true,
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "left" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtPct(limitePct),
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(limiteValor),
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: ultrapassou ? "ULTRAPASSADO" : "OK",
+        options: {
+          bold: true,
+          color: statusCor,
+          fill: { color: fill },
+          align: "center" as const,
+          valign: "middle" as const,
+        },
+      },
+    ];
+  };
+
+  const bodyRows = [
+    makeLimiteRow(
+      "Limite Geral  —  16% RCL",
+      limGeralRcl,
+      op.limiteGeral,
+      ultrapassouGeral,
+      0,
+    ),
+    makeLimiteRow(
+      "Limite de Alerta  —  14,4% RCL",
+      limAlertaRcl,
+      op.limiteAlerta,
+      ultrapassouAlerta,
+      1,
+    ),
+  ];
+
+  slide.addTable([headerRow, ...bodyRows], {
+    x: 0.8,
+    y: 4.2,
+    w: SLIDE_W - 1.6,
+    rowH: 0.6,
+    fontFace: FONT,
+    fontSize: 13,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [5.633, 1.9, 2.4, 1.8],
+  });
+
+  slide.addText(
+    "Resolução SF nº 43/2001, Art. 7º  •  RGF Anexo 04",
+    {
+      x: 0.8,
+      y: SLIDE_H - 1.05,
+      w: SLIDE_W - 1.6,
+      h: 0.4,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "left",
+    },
+  );
+
+  addFooterBar(pres, slide, data, 43);
+}
+
+// =========================================================================
+// Slide 44 — Fechamento
+// =========================================================================
+
+/**
+ * Slide final da apresentação. Reaproveita o estilo da capa (fundo
+ * azul institucional, faixa lateral dourada) e destaca um "OBRIGADO!"
+ * em letras grandes seguido da identificação do apresentador, cargo
+ * e instituição.
+ */
+function addSlide44Fechamento(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.primary };
+
+  // Faixa decorativa lateral dourada
+  slide.addShape(pres.ShapeType.rect, {
+    x: 0,
+    y: 0,
+    w: 0.35,
+    h: SLIDE_H,
+    fill: { color: COLORS.gold },
+    line: { color: COLORS.gold },
+  });
+
+  // Título principal: OBRIGADO!
+  slide.addText("OBRIGADO!", {
+    x: 1.0,
+    y: 1.9,
+    w: SLIDE_W - 2.0,
+    h: 1.4,
+    fontFace: FONT,
+    fontSize: 84,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    charSpacing: 8,
+  });
+
+  // Linha separadora dourada
+  slide.addShape(pres.ShapeType.line, {
+    x: 3.5,
+    y: 3.55,
+    w: SLIDE_W - 7.0,
+    h: 0,
+    line: { color: COLORS.gold, width: 2 },
+  });
+
+  // Subtítulo: título da audiência
+  slide.addText(
+    `AUDIÊNCIA PÚBLICA  —  ${data.tituloQuadrimestre.toUpperCase()}`,
+    {
+      x: 1.0,
+      y: 3.8,
+      w: SLIDE_W - 2.0,
+      h: 0.6,
+      fontFace: FONT,
+      fontSize: 22,
+      bold: true,
+      charSpacing: 4,
+      color: COLORS.gold,
+      align: "center",
+    },
+  );
+
+  // Data da apresentação
+  slide.addText(data.params.dataApresentacao, {
+    x: 1.0,
+    y: 4.4,
+    w: SLIDE_W - 2.0,
+    h: 0.4,
+    fontFace: FONT,
+    fontSize: 16,
+    italic: true,
+    color: COLORS.light,
+    align: "center",
+  });
+
+  // Apresentador (nome + cargo)
+  slide.addText(data.params.apresentador, {
+    x: 1.0,
+    y: 5.3,
+    w: SLIDE_W - 2.0,
+    h: 0.55,
+    fontFace: FONT,
+    fontSize: 22,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+  });
+  slide.addText(data.params.cargoApresentador, {
+    x: 1.0,
+    y: 5.85,
+    w: SLIDE_W - 2.0,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 15,
+    italic: true,
+    color: COLORS.light,
+    align: "center",
+  });
+
+  // Rodapé institucional
+  slide.addText(
+    "SECRETARIA MUNICIPAL DA FAZENDA  —  SEMFAZ  •  PREFEITURA DE SÃO LUÍS",
+    {
+      x: 1.0,
+      y: 6.8,
+      w: SLIDE_W - 2.0,
+      h: 0.4,
+      fontFace: FONT,
+      fontSize: 12,
+      italic: true,
+      color: COLORS.light,
+      align: "center",
+      charSpacing: 2,
+    },
+  );
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
 /**
- * Constrói a apresentação PPTX a partir dos dados já coletados.
- *
- * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
+ * Constrói a apresentação PPTX completa (44 slides) a partir dos
+ * dados já coletados. Retorna um `Buffer` pronto para ser servido
+ * em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
- *
- * NOTA: implementação parcial — por ora os slides 1 a 40 estão criados.
- * Os demais (41 a 44) serão adicionados em iterações seguintes, em
- * commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
   data: AudienciaData,
@@ -3953,8 +4615,17 @@ export async function buildAudienciaPptx(
   // Slide 40 — Dívida Consolidada Líquida
   addSlide40DividaConsolidada(pres, data);
 
-  // TODO: slides 41 a 44 (composição da dívida, garantias,
-  // operações de crédito e fechamento).
+  // Slide 41 — Composição da Dívida
+  addSlide41ComposicaoDivida(pres, data);
+
+  // Slide 42 — Garantias e Contragarantias
+  addSlide42Garantias(pres, data);
+
+  // Slide 43 — Operações de Crédito
+  addSlide43OperacoesCredito(pres, data);
+
+  // Slide 44 — Fechamento
+  addSlide44Fechamento(pres, data);
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return out as unknown as Buffer;
