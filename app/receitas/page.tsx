@@ -403,60 +403,102 @@ export default function ReceitasPage() {
             )}
 
             {/* Table View */}
-            {viewMode === "table" && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Dados Tabulares</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="px-3 py-2 text-left font-medium">Exercício</th>
-                          <th className="px-3 py-2 text-left font-medium">Categoria</th>
-                          <th className="px-3 py-2 text-right font-medium">Orçado</th>
-                          <th className="px-3 py-2 text-right font-medium">Arrecadado</th>
-                          <th className="px-3 py-2 text-right font-medium">% Execução</th>
-                          {MONTHS_SHORT.map((m) => (
-                            <th key={m} className="px-2 py-2 text-right font-medium">{m}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {summaryData
-                          .filter((d) => {
-                            if (!categoria) return true;
-                            const cats = expandCategoriaFilter(categoria);
-                            return cats.includes(d.categoria_tributaria);
-                          })
-                          .map((d, i) => {
-                            const exec = d.total_orcado > 0
-                              ? ((d.total_arrecadado / d.total_orcado) * 100).toFixed(1)
-                              : "0";
-                            return (
-                              <tr key={i} className="border-b hover:bg-muted/30">
-                                <td className="px-3 py-2">{d.exercicio_ano}</td>
-                                <td className="px-3 py-2">
-                                  {TAX_CATEGORY_LABELS[d.categoria_tributaria as TaxCategory] || d.categoria_tributaria}
-                                </td>
-                                <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrency(d.total_orcado)}</td>
-                                <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{formatCurrency(d.total_arrecadado)}</td>
-                                <td className="px-3 py-2 text-right">{exec}%</td>
-                                {MONTHS_KEYS.map((m) => (
-                                  <td key={m} className="px-2 py-2 text-right">
-                                    {formatTooltipValue((d[m] as number) || 0)}
+            {viewMode === "table" && (() => {
+              const filtered = summaryData.filter((d) => {
+                if (!categoria) return true;
+                const cats = expandCategoriaFilter(categoria);
+                return cats.includes(d.categoria_tributaria);
+              });
+              // Agrupa por exercício — um total por ano quando houver >1 linhas
+              const byYear = new Map<number, SummaryRow[]>();
+              for (const row of filtered) {
+                const arr = byYear.get(row.exercicio_ano) || [];
+                arr.push(row);
+                byYear.set(row.exercicio_ano, arr);
+              }
+              const yearsSorted = [...byYear.keys()].sort((a, b) => b - a);
+              return (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Dados Tabulares</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b bg-muted/50">
+                            <th className="px-3 py-2 text-left font-medium">Exercício</th>
+                            <th className="px-3 py-2 text-left font-medium">Categoria</th>
+                            <th className="px-3 py-2 text-right font-medium">Orçado</th>
+                            <th className="px-3 py-2 text-right font-medium">Arrecadado</th>
+                            <th className="px-3 py-2 text-right font-medium">% Execução</th>
+                            {MONTHS_SHORT.map((m) => (
+                              <th key={m} className="px-2 py-2 text-right font-medium">{m}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {yearsSorted.flatMap((year) => {
+                            const rows = byYear.get(year) || [];
+                            const elements: React.ReactNode[] = rows.map((d, i) => {
+                              const exec = d.total_orcado > 0
+                                ? ((d.total_arrecadado / d.total_orcado) * 100).toFixed(1)
+                                : "0";
+                              return (
+                                <tr key={`${year}-${i}`} className="border-b hover:bg-muted/30">
+                                  <td className="px-3 py-2">{d.exercicio_ano}</td>
+                                  <td className="px-3 py-2">
+                                    {TAX_CATEGORY_LABELS[d.categoria_tributaria as TaxCategory] || d.categoria_tributaria}
                                   </td>
-                                ))}
-                              </tr>
-                            );
+                                  <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrency(d.total_orcado)}</td>
+                                  <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{formatCurrency(d.total_arrecadado)}</td>
+                                  <td className="px-3 py-2 text-right">{exec}%</td>
+                                  {MONTHS_KEYS.map((m) => (
+                                    <td key={m} className="px-2 py-2 text-right">
+                                      {formatTooltipValue((d[m] as number) || 0)}
+                                    </td>
+                                  ))}
+                                </tr>
+                              );
+                            });
+                            if (rows.length > 1) {
+                              const totalOrcado = rows.reduce((s, r) => s + (r.total_orcado || 0), 0);
+                              const totalArrecadado = rows.reduce((s, r) => s + (r.total_arrecadado || 0), 0);
+                              const totalExec = totalOrcado > 0
+                                ? ((totalArrecadado / totalOrcado) * 100).toFixed(1)
+                                : "0";
+                              const totalMonths = MONTHS_KEYS.map((m) =>
+                                rows.reduce((s, r) => s + ((r[m] as number) || 0), 0),
+                              );
+                              elements.push(
+                                <tr
+                                  key={`${year}-total`}
+                                  className="border-y-2 border-semfaz-500 bg-semfaz-50/70 font-semibold text-semfaz-800"
+                                >
+                                  <td className="px-3 py-2">{year}</td>
+                                  <td className="px-3 py-2">
+                                    Total · {rows.length} receitas
+                                  </td>
+                                  <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrency(totalOrcado)}</td>
+                                  <td className="px-3 py-2 text-right whitespace-nowrap">{formatCurrency(totalArrecadado)}</td>
+                                  <td className="px-3 py-2 text-right">{totalExec}%</td>
+                                  {totalMonths.map((v, idx) => (
+                                    <td key={idx} className="px-2 py-2 text-right whitespace-nowrap">
+                                      {formatTooltipValue(v)}
+                                    </td>
+                                  ))}
+                                </tr>,
+                              );
+                            }
+                            return elements;
                           })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </>
         )}
       </div>
