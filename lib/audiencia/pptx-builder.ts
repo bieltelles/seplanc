@@ -7,18 +7,19 @@
  *
  * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
  * -------------------------------
- * Por ora os slides 1 a 28 (capa, apresentador, objetivo, ofícios, RREO
+ * Por ora os slides 1 a 32 (capa, apresentador, objetivo, ofícios, RREO
  * intro/notas, receitas tributárias/contribuições/patrimoniais/outras,
- * resumo de próprias, transferências, receita total e dependência
- * financeira) estão implementados. Os slides 29 a 44 (balanço, RCL,
- * resultados, indicadores, RGF e fechamento) serão adicionados em
- * commits subsequentes.
+ * resumo de próprias, transferências, receita total, dependência
+ * financeira e balanço orçamentário) estão implementados. Os slides
+ * 33 a 44 (RCL, resultados, indicadores, RGF e fechamento) serão
+ * adicionados em commits subsequentes.
  */
 
 import PptxGenJS from "pptxgenjs";
 
 import type {
   AudienciaData,
+  BalancoOrcamentarioLinha,
   CategoriaReceitaDetalhe,
 } from "./types";
 
@@ -1767,6 +1768,452 @@ function addSlide28DependenciaFinanceira(
 }
 
 // =========================================================================
+// Slide 29 — Balanço Orçamentário (introdução)
+// =========================================================================
+
+/**
+ * Slide de abertura da seção de Balanço Orçamentário. Texto descritivo
+ * conforme LC 101/2000 Art. 52, I, que trata da demonstração da
+ * execução das receitas e despesas do exercício.
+ */
+function addSlide29BalancoIntro(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "BALANÇO ORÇAMENTÁRIO");
+
+  slide.addText("Balanço Orçamentário", {
+    x: 1.0,
+    y: 1.15,
+    w: SLIDE_W - 2.0,
+    h: 0.8,
+    fontFace: FONT,
+    fontSize: 30,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  slide.addText(
+    "O Balanço Orçamentário demonstra, em conformidade com a Lei de " +
+      "Responsabilidade Fiscal, a execução das receitas e das despesas " +
+      "do exercício, comparando o que foi previsto com o que efetivamente " +
+      "foi arrecadado e executado. Por meio desse instrumento é possível " +
+      "apurar o resultado orçamentário (superávit ou déficit) do ente " +
+      "municipal e avaliar a aderência entre a LOA e sua execução.",
+    {
+      x: 1.5,
+      y: 2.3,
+      w: SLIDE_W - 3.0,
+      h: 3.0,
+      fontFace: FONT,
+      fontSize: 18,
+      color: COLORS.dark,
+      align: "justify",
+      valign: "top",
+      paraSpaceAfter: 10,
+    },
+  );
+
+  // Caixa com base legal
+  slide.addShape(pres.ShapeType.rect, {
+    x: 3.5,
+    y: 5.8,
+    w: SLIDE_W - 7.0,
+    h: 0.75,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 1.5 },
+  });
+  slide.addText("LC 101/2000, Art. 52, I  —  RREO Anexo 01", {
+    x: 3.5,
+    y: 5.8,
+    w: SLIDE_W - 7.0,
+    h: 0.75,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    italic: true,
+    color: COLORS.primary,
+    align: "center",
+    valign: "middle",
+  });
+
+  addFooterBar(pres, slide, data, 29);
+}
+
+// =========================================================================
+// Slides 30 e 31 — Balanço: tabelas de receitas e despesas
+// =========================================================================
+
+/**
+ * Renderiza um slide de balanço com uma tabela de 4 colunas
+ * (Categoria, Ano Anterior, Ano Atual, Diferença). Linhas cujo rótulo
+ * começa com "SUBTOTAL" ou "TOTAL" ficam destacadas em azul. A coluna
+ * "Diferença" é colorida verde/vermelho conforme o sinal.
+ *
+ * Reaproveitado pelos slides 30 (Receitas) e 31 (Despesas).
+ */
+function addBalancoTabelaSlide(
+  pres: Pptx,
+  data: AudienciaData,
+  args: {
+    pageNum: number;
+    titulo: string;
+    subtitulo: string;
+    linhas: BalancoOrcamentarioLinha[];
+  },
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, args.titulo);
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  slide.addText(args.subtitulo, {
+    x: 0.5,
+    y: 1.3,
+    w: SLIDE_W - 1.0,
+    h: 0.5,
+    fontFace: FONT,
+    fontSize: 20,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  const anoAtual = data.params.ano;
+  const anoAnterior = anoAtual - 1;
+  const colLabelAtual = periodoColunaLabel(
+    data.params.quadrimestre,
+    anoAtual,
+  );
+  const colLabelAnterior = periodoColunaLabel(
+    data.params.quadrimestre,
+    anoAnterior,
+  );
+
+  if (args.linhas.length === 0) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RREO Anexo 01 não puderam ser carregados para este " +
+        "período.",
+    );
+    addFooterBar(pres, slide, data, args.pageNum);
+    return;
+  }
+
+  // Cabeçalho
+  const headerOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+  const headerRow = [
+    { text: "CATEGORIA", options: { ...headerOpts, align: "left" as const } },
+    { text: colLabelAnterior, options: headerOpts },
+    { text: colLabelAtual, options: headerOpts },
+    { text: "DIFERENÇA", options: headerOpts },
+  ];
+
+  // Corpo
+  const bodyRows = args.linhas.map((l, idx) => {
+    const rot = l.rotulo.toUpperCase();
+    const isSubtotal = rot.startsWith("SUBTOTAL") || rot.startsWith("TOTAL");
+    const fill = isSubtotal
+      ? COLORS.accent
+      : idx % 2 === 0
+        ? COLORS.bg
+        : COLORS.white;
+    const baseColor = isSubtotal ? COLORS.white : COLORS.dark;
+    const bold = isSubtotal;
+    const diffColor = isSubtotal
+      ? COLORS.white
+      : l.diferenca >= 0
+        ? COLORS.success
+        : COLORS.danger;
+    return [
+      {
+        text: l.rotulo,
+        options: {
+          bold,
+          color: baseColor,
+          fill: { color: fill },
+          align: "left" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(l.anoAnterior),
+        options: {
+          bold,
+          color: baseColor,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(l.anoAtual),
+        options: {
+          bold,
+          color: baseColor,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(l.diferenca),
+        options: {
+          bold: true,
+          color: diffColor,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+    ];
+  });
+
+  slide.addTable([headerRow, ...bodyRows], {
+    x: 0.8,
+    y: 2.0,
+    w: SLIDE_W - 1.6,
+    rowH: 0.55,
+    fontFace: FONT,
+    fontSize: 13,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [4.733, 2.4, 2.4, 2.2],
+  });
+
+  slide.addText(
+    "Valores corrigidos pelo IPCA até 31/12 do ano anterior. " +
+      "Fonte: RREO Anexo 01 (SICONFI / STN).",
+    {
+      x: 0.8,
+      y: SLIDE_H - 1.0,
+      w: SLIDE_W - 1.6,
+      h: 0.45,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "left",
+    },
+  );
+
+  addFooterBar(pres, slide, data, args.pageNum);
+}
+
+/** Rótulo curto "jan–dez/YY" para coluna de tabela. */
+function periodoColunaLabel(q: 1 | 2 | 3, ano: number): string {
+  const yy = String(ano).slice(-2);
+  if (q === 1) return `jan–abr/${yy}`;
+  if (q === 2) return `jan–ago/${yy}`;
+  return `jan–dez/${yy}`;
+}
+
+// =========================================================================
+// Slide 30 — Balanço Orçamentário: Receitas
+// =========================================================================
+
+function addSlide30BalancoReceitas(pres: Pptx, data: AudienciaData): void {
+  addBalancoTabelaSlide(pres, data, {
+    pageNum: 30,
+    titulo: "BALANÇO ORÇAMENTÁRIO  —  RECEITAS",
+    subtitulo: "Execução das Receitas",
+    linhas: data.balancoOrcamentario?.receitas ?? [],
+  });
+}
+
+// =========================================================================
+// Slide 31 — Balanço Orçamentário: Despesas
+// =========================================================================
+
+function addSlide31BalancoDespesas(pres: Pptx, data: AudienciaData): void {
+  // No 3º quadrimestre a LRF exige despesas empenhadas; no 1º e 2º,
+  // empenhadas e liquidadas — a apresentação histórica da SEMFAZ usa
+  // "liquidadas" como referência nos quadrimestres parciais.
+  const q = data.params.quadrimestre;
+  const subtitulo =
+    q === 3 ? "Execução das Despesas Empenhadas" : "Execução das Despesas Liquidadas";
+
+  addBalancoTabelaSlide(pres, data, {
+    pageNum: 31,
+    titulo: "BALANÇO ORÇAMENTÁRIO  —  DESPESAS",
+    subtitulo,
+    linhas: data.balancoOrcamentario?.despesas ?? [],
+  });
+}
+
+// =========================================================================
+// Slide 32 — Balanço Orçamentário: Resultado do exercício
+// =========================================================================
+
+/**
+ * Compara o resultado orçamentário (superávit/déficit) do ano anterior
+ * com o do ano atual em dois cards lado a lado. Valor positivo é
+ * superávit (verde) e negativo é déficit (vermelho).
+ */
+function addSlide32BalancoResultado(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "BALANÇO ORÇAMENTÁRIO  —  RESULTADO");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  slide.addText("Resultado Orçamentário do Exercício", {
+    x: 0.5,
+    y: 1.3,
+    w: SLIDE_W - 1.0,
+    h: 0.55,
+    fontFace: FONT,
+    fontSize: 22,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  const res = data.balancoOrcamentario?.resultadoSuperavit;
+  if (!res) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "O resultado do Balanço Orçamentário não pôde ser calculado " +
+        "para este período.",
+    );
+    addFooterBar(pres, slide, data, 32);
+    return;
+  }
+
+  const anoAtual = data.params.ano;
+  const anoAnterior = anoAtual - 1;
+
+  // Dois cards lado a lado
+  const cardY = 2.3;
+  const cardH = 3.6;
+  const cardW = 5.6;
+  const cardGap = 0.333;
+  const totalCardsW = 2 * cardW + cardGap;
+  const card1X = (SLIDE_W - totalCardsW) / 2;
+  const card2X = card1X + cardW + cardGap;
+
+  const drawResultadoCard = (
+    x: number,
+    ano: number,
+    valor: number,
+  ): void => {
+    const isSuperavit = valor >= 0;
+    const corValor = isSuperavit ? COLORS.success : COLORS.danger;
+    const tipo = isSuperavit ? "SUPERÁVIT" : "DÉFICIT";
+    const periodoLabel = periodoColunaLabel(data.params.quadrimestre, ano);
+
+    slide.addShape(pres.ShapeType.rect, {
+      x,
+      y: cardY,
+      w: cardW,
+      h: cardH,
+      fill: { color: COLORS.light },
+      line: { color: COLORS.accent, width: 2 },
+    });
+
+    slide.addText(periodoLabel.toUpperCase(), {
+      x,
+      y: cardY + 0.25,
+      w: cardW,
+      h: 0.45,
+      fontFace: FONT,
+      fontSize: 15,
+      bold: true,
+      charSpacing: 4,
+      color: COLORS.primary,
+      align: "center",
+    });
+
+    slide.addShape(pres.ShapeType.line, {
+      x: x + 1.0,
+      y: cardY + 0.8,
+      w: cardW - 2.0,
+      h: 0,
+      line: { color: COLORS.accent, width: 1 },
+    });
+
+    slide.addText(tipo, {
+      x,
+      y: cardY + 0.95,
+      w: cardW,
+      h: 0.5,
+      fontFace: FONT,
+      fontSize: 18,
+      bold: true,
+      charSpacing: 3,
+      color: corValor,
+      align: "center",
+    });
+
+    slide.addText(fmtMi(Math.abs(valor)), {
+      x,
+      y: cardY + 1.55,
+      w: cardW,
+      h: 1.2,
+      fontFace: FONT,
+      fontSize: 40,
+      bold: true,
+      color: COLORS.dark,
+      align: "center",
+      valign: "middle",
+    });
+
+    slide.addText(
+      isSuperavit
+        ? "Receita executada > Despesa executada"
+        : "Despesa executada > Receita executada",
+      {
+        x,
+        y: cardY + 2.85,
+        w: cardW,
+        h: 0.45,
+        fontFace: FONT,
+        fontSize: 12,
+        italic: true,
+        color: COLORS.muted,
+        align: "center",
+      },
+    );
+  };
+
+  drawResultadoCard(card1X, anoAnterior, res.anoAnterior);
+  drawResultadoCard(card2X, anoAtual, res.anoAtual);
+
+  addFooterBar(pres, slide, data, 32);
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
@@ -1776,8 +2223,8 @@ function addSlide28DependenciaFinanceira(
  * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
  *
- * NOTA: implementação parcial — por ora os slides 1 a 28 estão criados.
- * Os demais (29 a 44) serão adicionados em iterações seguintes, em
+ * NOTA: implementação parcial — por ora os slides 1 a 32 estão criados.
+ * Os demais (33 a 44) serão adicionados em iterações seguintes, em
  * commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
@@ -1854,8 +2301,14 @@ export async function buildAudienciaPptx(
   // Slide 28 — Dependência Financeira (evolução 5 anos)
   addSlide28DependenciaFinanceira(pres, data);
 
-  // TODO: slides 29 a 44 (balanço orçamentário, RCL, resultados,
-  // indicadores educação/saúde, RGF pessoal/dívida/operações, fechamento).
+  // Slides 29 a 32 — Balanço Orçamentário
+  addSlide29BalancoIntro(pres, data);
+  addSlide30BalancoReceitas(pres, data);
+  addSlide31BalancoDespesas(pres, data);
+  addSlide32BalancoResultado(pres, data);
+
+  // TODO: slides 33 a 44 (RCL, resultados primário/nominal, indicadores
+  // educação/saúde, RGF pessoal/dívida/operações, fechamento).
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return out as unknown as Buffer;
