@@ -7,19 +7,20 @@
  *
  * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
  * -------------------------------
- * Por ora os slides 1 a 27 (capa, apresentador, objetivo, ofícios, RREO
- * intro, notas, receitas tributárias, contribuições, patrimoniais,
- * outras correntes, resumo de próprias, transferências (total + 6
- * detalhes), resumo de transferências e receita total) estão
- * implementados. Os slides 28 a 44 (dependência financeira, balanço,
- * RCL, resultados, indicadores educação/saúde, RGF pessoal/dívida/
- * composição/garantias/operações e fechamento) serão adicionados em
+ * Por ora os slides 1 a 28 (capa, apresentador, objetivo, ofícios, RREO
+ * intro/notas, receitas tributárias/contribuições/patrimoniais/outras,
+ * resumo de próprias, transferências, receita total e dependência
+ * financeira) estão implementados. Os slides 29 a 44 (balanço, RCL,
+ * resultados, indicadores, RGF e fechamento) serão adicionados em
  * commits subsequentes.
  */
 
 import PptxGenJS from "pptxgenjs";
 
-import type { AudienciaData, CategoriaReceitaDetalhe } from "./types";
+import type {
+  AudienciaData,
+  CategoriaReceitaDetalhe,
+} from "./types";
 
 // =========================================================================
 // Constantes de layout
@@ -208,6 +209,50 @@ function addHeaderBar(pres: Pptx, slide: Slide, titulo: string): void {
     align: "left",
     valign: "middle",
     charSpacing: 2,
+  });
+}
+
+/**
+ * Desenha um aviso central informando que determinado bloco de dados
+ * ainda não foi coletado (os anexos do RREO/RGF que alimentam os slides
+ * podem estar indisponíveis para alguns períodos). Usado como fallback
+ * nos slides 30, 31, 32, 34, 35, 36 e 37.
+ */
+function addDadosNaoDisponiveis(
+  pres: Pptx,
+  slide: Slide,
+  message: string,
+): void {
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.8,
+    y: 2.6,
+    w: SLIDE_W - 3.6,
+    h: 2.0,
+    fill: { color: COLORS.bg },
+    line: { color: COLORS.muted, width: 1 },
+  });
+  slide.addText("DADOS NÃO DISPONÍVEIS", {
+    x: 1.8,
+    y: 2.8,
+    w: SLIDE_W - 3.6,
+    h: 0.6,
+    fontFace: FONT,
+    fontSize: 20,
+    bold: true,
+    color: COLORS.muted,
+    align: "center",
+    charSpacing: 3,
+  });
+  slide.addText(message, {
+    x: 2.2,
+    y: 3.5,
+    w: SLIDE_W - 4.4,
+    h: 1.0,
+    fontFace: FONT,
+    fontSize: 13,
+    color: COLORS.dark,
+    align: "center",
+    valign: "middle",
   });
 }
 
@@ -1524,6 +1569,204 @@ function addSlide27ReceitaTotal(pres: Pptx, data: AudienciaData): void {
 }
 
 // =========================================================================
+// Slide 28 — Dependência Financeira (evolução 5 anos)
+// =========================================================================
+
+/**
+ * Mostra a evolução da participação das receitas próprias × transferidas
+ * ao longo dos últimos 5 exercícios. Contém um banner azul com a evolução
+ * percentual (ano-base → ano-atual, com delta em p.p.) e uma tabela com
+ * uma linha por ano cobrindo valores e percentuais.
+ */
+function addSlide28DependenciaFinanceira(
+  pres: Pptx,
+  data: AudienciaData,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(
+    pres,
+    slide,
+    "Receitas Municipais  —  Dependência Financeira",
+  );
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: SLIDE_W - 1.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const dep = data.dependenciaFinanceira;
+
+  if (dep.length === 0) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "A série histórica de receitas próprias × transferidas não pôde " +
+        "ser montada para este período.",
+    );
+    addFooterBar(pres, slide, data, 28);
+    return;
+  }
+
+  const first = dep[0];
+  const last = dep[dep.length - 1];
+  const ppDelta = (last.percentProprios - first.percentProprios) * 100;
+  const sinal = ppDelta >= 0 ? "+" : "";
+  const deltaStr = `${sinal}${ppDelta.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} p.p.`;
+  const corDelta = ppDelta >= 0 ? COLORS.gold : "FFA0A0";
+
+  // Banner com a evolução da participação das próprias
+  slide.addShape(pres.ShapeType.rect, {
+    x: 0.6,
+    y: 1.35,
+    w: SLIDE_W - 1.2,
+    h: 1.2,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("EVOLUÇÃO DA PARTICIPAÇÃO DAS RECEITAS PRÓPRIAS", {
+    x: 0.6,
+    y: 1.42,
+    w: SLIDE_W - 1.2,
+    h: 0.42,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(
+    [
+      {
+        text: `${fmtPct(first.percentProprios)} (${first.ano})`,
+        options: { bold: true, color: COLORS.white, fontSize: 22 },
+      },
+      {
+        text: "     →     ",
+        options: { color: COLORS.white, fontSize: 22 },
+      },
+      {
+        text: `${fmtPct(last.percentProprios)} (${last.ano})`,
+        options: { bold: true, color: COLORS.white, fontSize: 22 },
+      },
+      {
+        text: "          ",
+        options: { fontSize: 22, color: COLORS.white },
+      },
+      {
+        text: deltaStr,
+        options: { bold: true, color: corDelta, fontSize: 24 },
+      },
+    ],
+    {
+      x: 0.6,
+      y: 1.88,
+      w: SLIDE_W - 1.2,
+      h: 0.6,
+      fontFace: FONT,
+      align: "center",
+      valign: "middle",
+    },
+  );
+
+  // Tabela: Ano | Próprias | Transferidas | % Próprias | % Transferidas
+  const headerOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+  const headerRow = [
+    { text: "ANO", options: headerOpts },
+    { text: "RECEITAS PRÓPRIAS", options: headerOpts },
+    { text: "RECEITAS TRANSFERIDAS", options: headerOpts },
+    { text: "% PRÓPRIAS", options: headerOpts },
+    { text: "% TRANSFERIDAS", options: headerOpts },
+  ];
+
+  const bodyRows = dep.map((d, idx) => {
+    const isLast = idx === dep.length - 1;
+    const cellFill = isLast
+      ? COLORS.light
+      : idx % 2 === 0
+        ? COLORS.bg
+        : COLORS.white;
+    const cellColor = isLast ? COLORS.primary : COLORS.dark;
+    const base = {
+      bold: isLast,
+      color: cellColor,
+      fill: { color: cellFill },
+      valign: "middle" as const,
+    };
+    return [
+      {
+        text: String(d.ano),
+        options: { ...base, align: "center" as const },
+      },
+      {
+        text: fmtMi(d.proprios),
+        options: { ...base, align: "right" as const },
+      },
+      {
+        text: fmtMi(d.transferidos),
+        options: { ...base, align: "right" as const },
+      },
+      {
+        text: fmtPct(d.percentProprios),
+        options: { ...base, align: "center" as const },
+      },
+      {
+        text: fmtPct(d.percentTransferidos),
+        options: { ...base, align: "center" as const },
+      },
+    ];
+  });
+
+  slide.addTable([headerRow, ...bodyRows], {
+    x: 0.6,
+    y: 2.8,
+    w: SLIDE_W - 1.2,
+    rowH: 0.55,
+    fontFace: FONT,
+    fontSize: 13,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [1.2, 2.9, 3.0, 2.5, 2.533],
+  });
+
+  slide.addText(
+    "Valores nominais do SICONFI (sem correção monetária), refletindo a " +
+      "dependência financeira real do ente municipal no momento da " +
+      "arrecadação.",
+    {
+      x: 0.6,
+      y: SLIDE_H - 1.1,
+      w: SLIDE_W - 1.2,
+      h: 0.55,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "left",
+    },
+  );
+
+  addFooterBar(pres, slide, data, 28);
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
@@ -1533,8 +1776,8 @@ function addSlide27ReceitaTotal(pres: Pptx, data: AudienciaData): void {
  * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
  *
- * NOTA: implementação parcial — por ora os slides 1 a 27 estão criados.
- * Os demais (28 a 44) serão adicionados em iterações seguintes, em
+ * NOTA: implementação parcial — por ora os slides 1 a 28 estão criados.
+ * Os demais (29 a 44) serão adicionados em iterações seguintes, em
  * commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
@@ -1608,8 +1851,11 @@ export async function buildAudienciaPptx(
   // Slide 27 — Receita Total (próprias vs transferidos)
   addSlide27ReceitaTotal(pres, data);
 
-  // TODO: slides 28 a 44 (dependência financeira, balanço, RCL,
-  // resultados, indicadores, RGF e fechamento).
+  // Slide 28 — Dependência Financeira (evolução 5 anos)
+  addSlide28DependenciaFinanceira(pres, data);
+
+  // TODO: slides 29 a 44 (balanço orçamentário, RCL, resultados,
+  // indicadores educação/saúde, RGF pessoal/dívida/operações, fechamento).
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return out as unknown as Buffer;
