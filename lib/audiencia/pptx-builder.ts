@@ -7,15 +7,17 @@
  *
  * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
  * -------------------------------
- * Por ora apenas os slides 1 a 5 (capa, capa com apresentador, objetivo,
- * ofício expedido SEMFAZ→CMSL e ofício recebido CMSL→SEMFAZ) estão
- * implementados. Os slides 6 a 44 (RREO, RGF, indicadores e fechamento)
- * serão adicionados em commits subsequentes.
+ * Por ora apenas os slides 1 a 13 (capa, apresentador, objetivo, ofícios,
+ * RREO intro, notas metodológicas, receitas tributárias ISS/IPTU/ITBI/IR
+ * /Taxas e total das tributárias) estão implementados. Os slides 14 a 44
+ * (contribuições, patrimoniais, transferências, dependência financeira,
+ * balanço, RCL, resultados, indicadores, RGF e fechamento) serão
+ * adicionados em commits subsequentes.
  */
 
 import PptxGenJS from "pptxgenjs";
 
-import type { AudienciaData } from "./types";
+import type { AudienciaData, CategoriaReceitaDetalhe } from "./types";
 
 // =========================================================================
 // Constantes de layout
@@ -45,6 +47,46 @@ const FONT = "Calibri";
 
 type Pptx = InstanceType<typeof PptxGenJS>;
 type Slide = ReturnType<Pptx["addSlide"]>;
+
+// =========================================================================
+// Formatadores
+// =========================================================================
+
+/**
+ * Formata um valor em reais de modo compacto, escolhendo a unidade
+ * (mil/mi/bi) conforme a magnitude.
+ * Ex: 1.181.150.000 → "R$ 1,18 bi"; 186.062.000 → "R$ 186,06 mi".
+ */
+function fmtMi(n: number): string {
+  const abs = Math.abs(n);
+  const toBR = (v: number) =>
+    v.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  if (abs >= 1e9) return `R$ ${toBR(n / 1e9)} bi`;
+  if (abs >= 1e6) return `R$ ${toBR(n / 1e6)} mi`;
+  if (abs >= 1e3) return `R$ ${toBR(n / 1e3)} mil`;
+  return `R$ ${toBR(n)}`;
+}
+
+/**
+ * Formata uma fração decimal como percentual BR com sinal explícito.
+ * Ex: 0.3651 → "+36,51%"; -0.0113 → "-1,13%".
+ */
+function fmtPctSign(frac: number): string {
+  const pct = frac * 100;
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+/** Cor a usar para valores de crescimento (verde positivo, vermelho negativo). */
+function growthColor(frac: number): string {
+  return frac >= 0 ? COLORS.success : COLORS.danger;
+}
 
 // =========================================================================
 // Chrome comum (faixa inferior com metadados da audiência)
@@ -546,6 +588,466 @@ function addSlide05OficioCamara(pres: Pptx, data: AudienciaData): void {
 }
 
 // =========================================================================
+// Slide 6 — RREO: texto institucional
+// =========================================================================
+
+function addSlide06RreoIntro(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RREO  —  RELATÓRIO RESUMIDO DE EXECUÇÃO ORÇAMENTÁRIA");
+
+  slide.addText("Relatório Resumido de Execução Orçamentária", {
+    x: 1.0,
+    y: 1.15,
+    w: SLIDE_W - 2.0,
+    h: 0.8,
+    fontFace: FONT,
+    fontSize: 30,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  slide.addText(
+    "O Relatório Resumido de Execução Orçamentária (RREO) é um documento " +
+      "bimestral, definido pelo Tesouro Nacional e elaborado por todos os " +
+      "entes federados, que permite o acompanhamento e análise do " +
+      "desempenho das ações governamentais estabelecidas na Lei de " +
+      "Diretrizes Orçamentárias (LDO) e na Lei Orçamentária Anual (LOA).",
+    {
+      x: 1.5,
+      y: 2.3,
+      w: SLIDE_W - 3.0,
+      h: 3.0,
+      fontFace: FONT,
+      fontSize: 18,
+      color: COLORS.dark,
+      align: "justify",
+      valign: "top",
+      paraSpaceAfter: 10,
+    },
+  );
+
+  // Caixa com base legal
+  slide.addShape(pres.ShapeType.rect, {
+    x: 3.5,
+    y: 5.8,
+    w: SLIDE_W - 7.0,
+    h: 0.75,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 1.5 },
+  });
+  slide.addText("CF/88, Art. 165, § 3º", {
+    x: 3.5,
+    y: 5.8,
+    w: SLIDE_W - 7.0,
+    h: 0.75,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    italic: true,
+    color: COLORS.primary,
+    align: "center",
+    valign: "middle",
+  });
+
+  addFooterBar(pres, slide, data, 6);
+}
+
+// =========================================================================
+// Slide 7 — RREO: notas metodológicas
+// =========================================================================
+
+function addSlide07RreoNotas(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RREO  —  NOTAS METODOLÓGICAS");
+
+  slide.addText("Notas Importantes", {
+    x: 1.0,
+    y: 1.15,
+    w: SLIDE_W - 2.0,
+    h: 0.8,
+    fontFace: FONT,
+    fontSize: 30,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  const anoRef = data.params.ano;
+  const anoBase = data.params.anoBaseCorrecao ?? anoRef;
+  const anoInicio = anoRef - 4;
+
+  slide.addText(
+    [
+      {
+        text:
+          `Os valores apresentados de ${anoInicio} a ${anoRef - 1} estão ` +
+          `atualizados conforme o IPCA até ${anoBase}`,
+        options: { bullet: { code: "25CF" }, breakLine: true },
+      },
+      {
+        text:
+          `Os valores apresentados referentes a ${anoRef} estão em moeda ` +
+          `corrente, conforme relatório homologado no SICONFI`,
+        options: { bullet: { code: "25CF" }, breakLine: true },
+      },
+      {
+        text:
+          "Todos os valores apresentados estão LÍQUIDOS do FUNDEB e de " +
+          "receitas INTRA-ORÇAMENTÁRIAS",
+        options: { bullet: { code: "25CF" } },
+      },
+    ],
+    {
+      x: 1.2,
+      y: 2.5,
+      w: SLIDE_W - 2.4,
+      h: 3.8,
+      fontFace: FONT,
+      fontSize: 20,
+      color: COLORS.dark,
+      valign: "top",
+      paraSpaceAfter: 14,
+    },
+  );
+
+  addFooterBar(pres, slide, data, 7);
+}
+
+// =========================================================================
+// Slides 8-12 — Receita tributária detalhada (gráfico 5 anos + KPIs)
+// =========================================================================
+
+/**
+ * Renderiza um slide com o histórico de 5 anos de uma categoria de receita,
+ * o valor arrecadado no exercício e os percentuais de crescimento.
+ * Reaproveitado para ISS, IPTU, ITBI, IR, Taxas e mais adiante para
+ * contribuições, patrimoniais e transferências.
+ */
+function addReceitaDetalheSlide(
+  pres: Pptx,
+  data: AudienciaData,
+  detalhe: CategoriaReceitaDetalhe,
+  titulo: string,
+  pageNum: number,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, titulo.toUpperCase());
+
+  // Período referente + rótulo da categoria (destaques)
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 6.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+    valign: "middle",
+  });
+
+  slide.addText(detalhe.label, {
+    x: 0.5,
+    y: 1.25,
+    w: SLIDE_W - 1.0,
+    h: 0.75,
+    fontFace: FONT,
+    fontSize: 32,
+    bold: true,
+    color: COLORS.primary,
+    align: "left",
+  });
+
+  // Gráfico de barras — 5 anos (valores em R$ milhões)
+  const labels = detalhe.historicoAnual.map((h) => String(h.ano));
+  const values = detalhe.historicoAnual.map((h) => h.valor / 1e6);
+
+  slide.addChart(
+    pres.ChartType.bar,
+    [{ name: "Arrecadação (R$ mi)", labels, values }],
+    {
+      x: 0.5,
+      y: 2.15,
+      w: 7.8,
+      h: 4.65,
+      barDir: "col",
+      barGrouping: "standard",
+      showLegend: false,
+      showTitle: false,
+      showValue: true,
+      dataLabelFontSize: 11,
+      dataLabelFontFace: FONT,
+      dataLabelFormatCode: "#,##0.00",
+      dataLabelColor: COLORS.dark,
+      chartColors: [COLORS.accent],
+      catAxisLabelFontSize: 12,
+      catAxisLabelFontFace: FONT,
+      catAxisLabelColor: COLORS.dark,
+      valAxisLabelFontSize: 10,
+      valAxisLabelFontFace: FONT,
+      valAxisLabelColor: COLORS.muted,
+      valAxisLabelFormatCode: "#,##0",
+    },
+  );
+
+  // Painel de KPIs à direita
+  const boxX = 8.7;
+  const boxY = 2.15;
+  const boxW = 4.1;
+  const boxH = 4.65;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: boxX,
+    y: boxY,
+    w: boxW,
+    h: boxH,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 1 },
+  });
+
+  // Valor arrecadado
+  slide.addText("VALOR ARRECADADO", {
+    x: boxX + 0.2,
+    y: boxY + 0.25,
+    w: boxW - 0.4,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    charSpacing: 2,
+    color: COLORS.muted,
+    align: "center",
+  });
+  slide.addText(fmtMi(detalhe.valorArrecadado), {
+    x: boxX + 0.2,
+    y: boxY + 0.6,
+    w: boxW - 0.4,
+    h: 0.9,
+    fontFace: FONT,
+    fontSize: 28,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Separador
+  slide.addShape(pres.ShapeType.line, {
+    x: boxX + 0.4,
+    y: boxY + 1.7,
+    w: boxW - 0.8,
+    h: 0,
+    line: { color: COLORS.accent, width: 1 },
+  });
+
+  const anoInicial = detalhe.historicoAnual[0]?.ano ?? data.params.ano - 4;
+  const anoFinal = data.params.ano;
+  const anoAnterior = anoFinal - 1;
+  const sufInicio = String(anoInicial).slice(-2);
+  const sufFinal = String(anoFinal).slice(-2);
+  const sufAnterior = String(anoAnterior).slice(-2);
+
+  // Crescimento 5 anos
+  slide.addText(`Crescimento ${sufInicio}–${sufFinal}`, {
+    x: boxX + 0.2,
+    y: boxY + 1.9,
+    w: boxW - 0.4,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    bold: true,
+    color: COLORS.muted,
+    align: "center",
+  });
+  slide.addText(fmtPctSign(detalhe.crescimento5a), {
+    x: boxX + 0.2,
+    y: boxY + 2.25,
+    w: boxW - 0.4,
+    h: 0.7,
+    fontFace: FONT,
+    fontSize: 26,
+    bold: true,
+    color: growthColor(detalhe.crescimento5a),
+    align: "center",
+    valign: "middle",
+  });
+
+  // Crescimento anual
+  slide.addText(`Crescimento ${sufAnterior}–${sufFinal}`, {
+    x: boxX + 0.2,
+    y: boxY + 3.1,
+    w: boxW - 0.4,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    bold: true,
+    color: COLORS.muted,
+    align: "center",
+  });
+  slide.addText(fmtPctSign(detalhe.crescimentoAnual), {
+    x: boxX + 0.2,
+    y: boxY + 3.45,
+    w: boxW - 0.4,
+    h: 0.7,
+    fontFace: FONT,
+    fontSize: 26,
+    bold: true,
+    color: growthColor(detalhe.crescimentoAnual),
+    align: "center",
+    valign: "middle",
+  });
+
+  addFooterBar(pres, slide, data, pageNum);
+}
+
+// =========================================================================
+// Slide 13 — Total das Receitas Tributárias
+// =========================================================================
+
+function addSlide13TotalTributarias(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RECEITAS MUNICIPAIS  —  TOTAL DAS TRIBUTÁRIAS");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 6.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  // Banner superior com o total
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 1.4,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("TOTAL DAS RECEITAS TRIBUTÁRIAS", {
+    x: 1.5,
+    y: 1.45,
+    w: SLIDE_W - 3.0,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtMi(data.tributarias.total), {
+    x: 1.5,
+    y: 1.9,
+    w: SLIDE_W - 3.0,
+    h: 0.9,
+    fontFace: FONT,
+    fontSize: 40,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Tabela de breakdown por categoria
+  const headerCellOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+
+  const headerRow = [
+    { text: "Categoria", options: { ...headerCellOpts, align: "left" as const } },
+    { text: "Arrecadado", options: headerCellOpts },
+    { text: "Cresc. 5 anos", options: headerCellOpts },
+    { text: "Cresc. Anual", options: headerCellOpts },
+  ];
+
+  const cats: CategoriaReceitaDetalhe[] = [
+    data.tributarias.iss,
+    data.tributarias.iptu,
+    data.tributarias.itbi,
+    data.tributarias.ir,
+    data.tributarias.taxas,
+  ];
+
+  const bodyRows = cats.map((c) => [
+    {
+      text: c.label,
+      options: { color: COLORS.dark, align: "left" as const, valign: "middle" as const },
+    },
+    {
+      text: fmtMi(c.valorArrecadado),
+      options: { color: COLORS.dark, align: "right" as const, valign: "middle" as const },
+    },
+    {
+      text: fmtPctSign(c.crescimento5a),
+      options: {
+        color: growthColor(c.crescimento5a),
+        bold: true,
+        align: "right" as const,
+        valign: "middle" as const,
+      },
+    },
+    {
+      text: fmtPctSign(c.crescimentoAnual),
+      options: {
+        color: growthColor(c.crescimentoAnual),
+        bold: true,
+        align: "right" as const,
+        valign: "middle" as const,
+      },
+    },
+  ]);
+
+  const totalRowOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.accent },
+    valign: "middle" as const,
+  };
+  const totalRow = [
+    { text: "TOTAL", options: { ...totalRowOpts, align: "left" as const } },
+    {
+      text: fmtMi(data.tributarias.total),
+      options: { ...totalRowOpts, align: "right" as const },
+    },
+    { text: "", options: totalRowOpts },
+    { text: "", options: totalRowOpts },
+  ];
+
+  slide.addTable([headerRow, ...bodyRows, totalRow], {
+    x: 1.5,
+    y: 3.2,
+    w: SLIDE_W - 3.0,
+    h: 3.6,
+    fontFace: FONT,
+    fontSize: 14,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [4.333, 2.5, 1.75, 1.75],
+  });
+
+  addFooterBar(pres, slide, data, 13);
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
@@ -555,8 +1057,8 @@ function addSlide05OficioCamara(pres: Pptx, data: AudienciaData): void {
  * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
  *
- * NOTA: implementação parcial — por ora apenas os slides 1 a 5 estão
- * criados. Os demais (6 a 44) serão adicionados em iterações seguintes,
+ * NOTA: implementação parcial — por ora apenas os slides 1 a 13 estão
+ * criados. Os demais (14 a 44) serão adicionados em iterações seguintes,
  * em commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
@@ -577,8 +1079,24 @@ export async function buildAudienciaPptx(
   addSlide04OficioSemfaz(pres, data);
   addSlide05OficioCamara(pres, data);
 
-  // TODO: slides 6 a 44 (RREO receitas, dependência financeira,
-  // balanço orçamentário, RCL, resultados, indicadores, RGF e fechamento).
+  // Slides 6 e 7 — RREO introdução e notas metodológicas
+  addSlide06RreoIntro(pres, data);
+  addSlide07RreoNotas(pres, data);
+
+  // Slides 8 a 12 — Receitas tributárias individuais
+  const tituloTributarias = "Receitas Municipais  —  Tributárias";
+  addReceitaDetalheSlide(pres, data, data.tributarias.iss, tituloTributarias, 8);
+  addReceitaDetalheSlide(pres, data, data.tributarias.iptu, tituloTributarias, 9);
+  addReceitaDetalheSlide(pres, data, data.tributarias.itbi, tituloTributarias, 10);
+  addReceitaDetalheSlide(pres, data, data.tributarias.ir, tituloTributarias, 11);
+  addReceitaDetalheSlide(pres, data, data.tributarias.taxas, tituloTributarias, 12);
+
+  // Slide 13 — Total das Receitas Tributárias
+  addSlide13TotalTributarias(pres, data);
+
+  // TODO: slides 14 a 44 (contribuições, patrimoniais, transferências,
+  // dependência financeira, balanço, RCL, resultados, indicadores,
+  // RGF e fechamento).
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return out as unknown as Buffer;
