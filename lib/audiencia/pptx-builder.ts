@@ -7,13 +7,14 @@
  *
  * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
  * -------------------------------
- * Por ora os slides 1 a 37 (capa, apresentador, objetivo, ofícios, RREO
+ * Por ora os slides 1 a 40 (capa, apresentador, objetivo, ofícios, RREO
  * intro/notas, receitas tributárias/contribuições/patrimoniais/outras,
  * resumo de próprias, transferências, receita total, dependência
- * financeira, balanço orçamentário, RCL, resultados primário/nominal
- * e indicadores de educação e saúde) estão implementados. Os slides
- * 38 a 44 (RGF pessoal/dívida/composição/garantias/operações e
- * fechamento) serão adicionados em commits subsequentes.
+ * financeira, balanço orçamentário, RCL, resultados, indicadores de
+ * educação e saúde, RGF intro, despesas de pessoal e dívida
+ * consolidada) estão implementados. Os slides 41 a 44 (composição da
+ * dívida, garantias, operações de crédito e fechamento) serão
+ * adicionados em commits subsequentes.
  */
 
 import PptxGenJS from "pptxgenjs";
@@ -3217,6 +3218,628 @@ function addSlide37IndicadorSaude(pres: Pptx, data: AudienciaData): void {
 }
 
 // =========================================================================
+// Slide 38 — RGF (introdução)
+// =========================================================================
+
+/**
+ * Slide de abertura da seção do Relatório de Gestão Fiscal. Texto
+ * descritivo conforme LC 101/2000 Arts. 54 e 55, que instituem o RGF
+ * como instrumento quadrimestral de demonstração do cumprimento dos
+ * limites de pessoal, dívida, garantias, operações de crédito e
+ * inscrição em restos a pagar.
+ */
+function addSlide38RgfIntro(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RGF  —  RELATÓRIO DE GESTÃO FISCAL");
+
+  slide.addText("Relatório de Gestão Fiscal", {
+    x: 1.0,
+    y: 1.15,
+    w: SLIDE_W - 2.0,
+    h: 0.8,
+    fontFace: FONT,
+    fontSize: 30,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  slide.addText(
+    "O Relatório de Gestão Fiscal (RGF) é o instrumento de " +
+      "transparência fiscal exigido pela Lei de Responsabilidade " +
+      "Fiscal. Publicado ao final de cada quadrimestre, ele demonstra " +
+      "a posição do ente federado perante os limites e condições " +
+      "previstos em lei para a despesa total com pessoal, a dívida " +
+      "consolidada, a concessão de garantias, as operações de crédito " +
+      "e a inscrição em restos a pagar, consolidando todos os poderes " +
+      "e órgãos do município.",
+    {
+      x: 1.0,
+      y: 2.2,
+      w: SLIDE_W - 2.0,
+      h: 3.4,
+      fontFace: FONT,
+      fontSize: 16,
+      color: COLORS.dark,
+      align: "justify",
+      valign: "top",
+      paraSpaceAfter: 8,
+    },
+  );
+
+  // Caixa com base legal
+  slide.addShape(pres.ShapeType.rect, {
+    x: 3.0,
+    y: 5.95,
+    w: SLIDE_W - 6.0,
+    h: 0.75,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 1.5 },
+  });
+  slide.addText("LC 101/2000, Arts. 54 e 55  —  RGF Anexos 01 a 06", {
+    x: 3.0,
+    y: 5.95,
+    w: SLIDE_W - 6.0,
+    h: 0.75,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    italic: true,
+    color: COLORS.primary,
+    align: "center",
+    valign: "middle",
+  });
+
+  addFooterBar(pres, slide, data, 38);
+}
+
+// =========================================================================
+// Slide 39 — RGF: Despesa Total com Pessoal
+// =========================================================================
+
+/**
+ * Demonstra a Despesa Total com Pessoal (DTP) em percentual da RCL
+ * ajustada e compara contra os três limites legais: alerta (48,6%),
+ * prudencial (51,3%) e máximo (54%). O banner superior mostra o
+ * percentual DTP/RCL em destaque com um rótulo de situação colorido.
+ * A tabela inferior lista os três limites com o status individual.
+ */
+function addSlide39Pessoal(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RGF  —  DESPESA TOTAL COM PESSOAL");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const pessoal = data.pessoal;
+  if (!pessoal) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RGF Anexo 01 (despesas com pessoal) não puderam " +
+        "ser carregados para este período.",
+    );
+    addFooterBar(pres, slide, data, 39);
+    return;
+  }
+
+  const pct = pessoal.percentualDtp;
+  const limMaxRcl = 0.54;
+  const limPruRcl = 0.513;
+  const limAlertaRcl = 0.486;
+  const ultrapassouMaximo = pct > limMaxRcl;
+  const ultrapassouPrudencial = pct > limPruRcl;
+  const ultrapassouAlerta = pct > limAlertaRcl;
+
+  const statusLabel = ultrapassouMaximo
+    ? "LIMITE MÁXIMO ULTRAPASSADO"
+    : ultrapassouPrudencial
+      ? "LIMITE PRUDENCIAL ULTRAPASSADO"
+      : ultrapassouAlerta
+        ? "LIMITE DE ALERTA ULTRAPASSADO"
+        : "ABAIXO DO LIMITE DE ALERTA";
+  const statusColor = ultrapassouMaximo
+    ? "FFA0A0"
+    : ultrapassouPrudencial
+      ? "FFCE9E"
+      : COLORS.gold;
+
+  // Banner com o % DTP / RCL ajustada
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 2.0,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("DESPESA TOTAL COM PESSOAL  /  RCL AJUSTADA", {
+    x: 1.5,
+    y: 1.5,
+    w: SLIDE_W - 3.0,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtPct(pct), {
+    x: 1.5,
+    y: 1.95,
+    w: SLIDE_W - 3.0,
+    h: 1.05,
+    fontFace: FONT,
+    fontSize: 44,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+  slide.addText(statusLabel, {
+    x: 1.5,
+    y: 3.0,
+    w: SLIDE_W - 3.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: statusColor,
+    align: "center",
+  });
+
+  // Linha DTP / RCL Ajustada em rich-text
+  slide.addText(
+    [
+      {
+        text: "DTP: ",
+        options: { color: COLORS.muted, fontSize: 12, italic: true },
+      },
+      {
+        text: fmtMi(pessoal.dtp),
+        options: { color: COLORS.dark, fontSize: 13, bold: true },
+      },
+      { text: "          ", options: { fontSize: 13 } },
+      {
+        text: "RCL Ajustada: ",
+        options: { color: COLORS.muted, fontSize: 12, italic: true },
+      },
+      {
+        text: fmtMi(pessoal.rclAjustada),
+        options: { color: COLORS.dark, fontSize: 13, bold: true },
+      },
+    ],
+    {
+      x: 1.5,
+      y: 3.55,
+      w: SLIDE_W - 3.0,
+      h: 0.35,
+      fontFace: FONT,
+      align: "center",
+    },
+  );
+
+  // Tabela com os 3 limites
+  const headerOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+  const headerRow = [
+    { text: "LIMITE", options: { ...headerOpts, align: "left" as const } },
+    { text: "% RCL", options: headerOpts },
+    { text: "VALOR", options: headerOpts },
+    { text: "STATUS", options: headerOpts },
+  ];
+
+  const makeLimiteRow = (
+    label: string,
+    limitePct: number,
+    limiteValor: number,
+    ultrapassou: boolean,
+    idx: number,
+  ) => {
+    const fill = idx % 2 === 0 ? COLORS.bg : COLORS.white;
+    const statusCor = ultrapassou ? COLORS.danger : COLORS.success;
+    return [
+      {
+        text: label,
+        options: {
+          bold: true,
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "left" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtPct(limitePct),
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(limiteValor),
+        options: {
+          color: COLORS.dark,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: ultrapassou ? "ULTRAPASSADO" : "OK",
+        options: {
+          bold: true,
+          color: statusCor,
+          fill: { color: fill },
+          align: "center" as const,
+          valign: "middle" as const,
+        },
+      },
+    ];
+  };
+
+  const bodyRows = [
+    makeLimiteRow(
+      "Limite Máximo  —  54% RCL",
+      limMaxRcl,
+      pessoal.limiteMaximo,
+      ultrapassouMaximo,
+      0,
+    ),
+    makeLimiteRow(
+      "Limite Prudencial  —  51,3% RCL",
+      limPruRcl,
+      pessoal.limitePrudencial,
+      ultrapassouPrudencial,
+      1,
+    ),
+    makeLimiteRow(
+      "Limite de Alerta  —  48,6% RCL",
+      limAlertaRcl,
+      pessoal.limiteAlerta,
+      ultrapassouAlerta,
+      2,
+    ),
+  ];
+
+  slide.addTable([headerRow, ...bodyRows], {
+    x: 0.8,
+    y: 4.1,
+    w: SLIDE_W - 1.6,
+    rowH: 0.55,
+    fontFace: FONT,
+    fontSize: 13,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [5.633, 1.9, 2.4, 1.8],
+  });
+
+  slide.addText(
+    "LC 101/2000, Art. 20, III, b (Municípios)  •  RGF Anexo 01",
+    {
+      x: 0.8,
+      y: SLIDE_H - 1.05,
+      w: SLIDE_W - 1.6,
+      h: 0.4,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "left",
+    },
+  );
+
+  addFooterBar(pres, slide, data, 39);
+}
+
+// =========================================================================
+// Slide 40 — RGF: Dívida Consolidada
+// =========================================================================
+
+/**
+ * Mostra a Dívida Consolidada Líquida (DCL) em percentual da RCL
+ * ajustada, comparando-a com o limite máximo do Senado (120% RCL).
+ * Banner superior com o percentual em destaque; duas tabelas lado a
+ * lado abaixo — a da esquerda apresenta a composição da DCL
+ * (DC − deduções = DCL) junto da RCL ajustada e do limite; a da
+ * direita detalha os componentes das deduções totais.
+ */
+function addSlide40DividaConsolidada(
+  pres: Pptx,
+  data: AudienciaData,
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RGF  —  DÍVIDA CONSOLIDADA LÍQUIDA");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const dc = data.dividaConsolidada;
+  if (!dc) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RGF Anexo 02 (dívida consolidada) não puderam " +
+        "ser carregados para este período.",
+    );
+    addFooterBar(pres, slide, data, 40);
+    return;
+  }
+
+  const pctDcl = dc.percentualDcl;
+  const limMaxRcl = 1.2;
+  const ultrapassou = pctDcl > limMaxRcl;
+  const statusLabel = ultrapassou
+    ? "LIMITE MÁXIMO ULTRAPASSADO"
+    : "ABAIXO DO LIMITE MÁXIMO";
+  const statusColor = ultrapassou ? "FFA0A0" : COLORS.gold;
+
+  // Banner com o % DCL / RCL ajustada
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 1.85,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("DÍVIDA CONSOLIDADA LÍQUIDA  /  RCL AJUSTADA", {
+    x: 1.5,
+    y: 1.5,
+    w: SLIDE_W - 3.0,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtPct(pctDcl), {
+    x: 1.5,
+    y: 1.95,
+    w: SLIDE_W - 3.0,
+    h: 0.9,
+    fontFace: FONT,
+    fontSize: 42,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+  slide.addText(statusLabel, {
+    x: 1.5,
+    y: 2.85,
+    w: SLIDE_W - 3.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: statusColor,
+    align: "center",
+  });
+
+  // Duas tabelas lado a lado
+  const tblW = 6.0;
+  const tblGap = 0.2;
+  const tblTotalW = 2 * tblW + tblGap;
+  const tblX1 = (SLIDE_W - tblTotalW) / 2;
+  const tblX2 = tblX1 + tblW + tblGap;
+  const tblY = 3.5;
+
+  // ---- Tabela esquerda: Composição da DCL ----
+  slide.addText("COMPOSIÇÃO DA DCL", {
+    x: tblX1,
+    y: tblY,
+    w: tblW,
+    h: 0.4,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  const makeCompRow = (
+    label: string,
+    valor: number,
+    opts: {
+      bold?: boolean;
+      highlight?: boolean;
+      color?: string;
+      idx: number;
+    },
+  ) => {
+    const fill = opts.highlight
+      ? COLORS.light
+      : opts.idx % 2 === 0
+        ? COLORS.bg
+        : COLORS.white;
+    const color = opts.color ?? COLORS.dark;
+    return [
+      {
+        text: label,
+        options: {
+          bold: opts.bold ?? false,
+          color,
+          fill: { color: fill },
+          align: "left" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(valor),
+        options: {
+          bold: opts.bold ?? false,
+          color,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+    ];
+  };
+
+  const compBody = [
+    makeCompRow("Dívida Consolidada  (DC)", dc.dc, { idx: 0 }),
+    makeCompRow("(−) Deduções Totais", -Math.abs(dc.deducoesTotal), {
+      idx: 1,
+      color: COLORS.danger,
+    }),
+    makeCompRow("(=) DCL", dc.dcl, {
+      idx: 2,
+      bold: true,
+      highlight: true,
+      color: COLORS.primary,
+    }),
+    makeCompRow("RCL Ajustada (base)", dc.rclAjustada, { idx: 3 }),
+    makeCompRow("Limite Máximo  —  120% RCL", dc.limiteMaximo, {
+      idx: 4,
+      bold: true,
+      color: COLORS.primary,
+    }),
+  ];
+
+  slide.addTable(compBody, {
+    x: tblX1,
+    y: tblY + 0.45,
+    w: tblW,
+    rowH: 0.48,
+    fontFace: FONT,
+    fontSize: 12,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [3.8, 2.2],
+  });
+
+  // ---- Tabela direita: Detalhamento das deduções ----
+  slide.addText("DETALHAMENTO DAS DEDUÇÕES", {
+    x: tblX2,
+    y: tblY,
+    w: tblW,
+    h: 0.4,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  const makeDedRow = (
+    label: string,
+    valor: number,
+    opts: { bold?: boolean; highlight?: boolean; idx: number },
+  ) => {
+    const fill = opts.highlight
+      ? COLORS.light
+      : opts.idx % 2 === 0
+        ? COLORS.bg
+        : COLORS.white;
+    const color = opts.highlight ? COLORS.primary : COLORS.dark;
+    return [
+      {
+        text: label,
+        options: {
+          bold: opts.bold ?? false,
+          color,
+          fill: { color: fill },
+          align: "left" as const,
+          valign: "middle" as const,
+        },
+      },
+      {
+        text: fmtMi(valor),
+        options: {
+          bold: opts.bold ?? false,
+          color,
+          fill: { color: fill },
+          align: "right" as const,
+          valign: "middle" as const,
+        },
+      },
+    ];
+  };
+
+  const dedBody = [
+    makeDedRow("Disponibilidade de Caixa", dc.disponibilidadeCaixa, { idx: 0 }),
+    makeDedRow("(−) Restos a Pagar", -Math.abs(dc.restosAPagar), { idx: 1 }),
+    makeDedRow(
+      "(−) Depósitos Restituíveis",
+      -Math.abs(dc.depositosRestituiveis),
+      { idx: 2 },
+    ),
+    makeDedRow("Demais Haveres", dc.demaisHaveres, { idx: 3 }),
+    makeDedRow("(=) Total das Deduções", dc.deducoesTotal, {
+      idx: 4,
+      bold: true,
+      highlight: true,
+    }),
+  ];
+
+  slide.addTable(dedBody, {
+    x: tblX2,
+    y: tblY + 0.45,
+    w: tblW,
+    rowH: 0.48,
+    fontFace: FONT,
+    fontSize: 12,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [3.8, 2.2],
+  });
+
+  slide.addText(
+    "LC 101/2000 Art. 3º  •  Resolução SF nº 40/2001  •  RGF Anexo 02",
+    {
+      x: 0.8,
+      y: SLIDE_H - 1.05,
+      w: SLIDE_W - 1.6,
+      h: 0.4,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "left",
+    },
+  );
+
+  addFooterBar(pres, slide, data, 40);
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
@@ -3226,8 +3849,8 @@ function addSlide37IndicadorSaude(pres: Pptx, data: AudienciaData): void {
  * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
  *
- * NOTA: implementação parcial — por ora os slides 1 a 37 estão criados.
- * Os demais (38 a 44) serão adicionados em iterações seguintes, em
+ * NOTA: implementação parcial — por ora os slides 1 a 40 estão criados.
+ * Os demais (41 a 44) serão adicionados em iterações seguintes, em
  * commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
@@ -3321,7 +3944,16 @@ export async function buildAudienciaPptx(
   addSlide36IndicadorEducacao(pres, data);
   addSlide37IndicadorSaude(pres, data);
 
-  // TODO: slides 38 a 44 (RGF pessoal/dívida/composição/garantias/
+  // Slide 38 — RGF (introdução)
+  addSlide38RgfIntro(pres, data);
+
+  // Slide 39 — Despesa Total com Pessoal
+  addSlide39Pessoal(pres, data);
+
+  // Slide 40 — Dívida Consolidada Líquida
+  addSlide40DividaConsolidada(pres, data);
+
+  // TODO: slides 41 a 44 (composição da dívida, garantias,
   // operações de crédito e fechamento).
 
   const out = await pres.write({ outputType: "nodebuffer" });
