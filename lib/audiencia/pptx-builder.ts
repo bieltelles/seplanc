@@ -7,12 +7,14 @@
  *
  * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
  * -------------------------------
- * Por ora apenas os slides 1 a 13 (capa, apresentador, objetivo, ofícios,
- * RREO intro, notas metodológicas, receitas tributárias ISS/IPTU/ITBI/IR
- * /Taxas e total das tributárias) estão implementados. Os slides 14 a 44
- * (contribuições, patrimoniais, transferências, dependência financeira,
- * balanço, RCL, resultados, indicadores, RGF e fechamento) serão
- * adicionados em commits subsequentes.
+ * Por ora os slides 1 a 27 (capa, apresentador, objetivo, ofícios, RREO
+ * intro, notas, receitas tributárias, contribuições, patrimoniais,
+ * outras correntes, resumo de próprias, transferências (total + 6
+ * detalhes), resumo de transferências e receita total) estão
+ * implementados. Os slides 28 a 44 (dependência financeira, balanço,
+ * RCL, resultados, indicadores educação/saúde, RGF pessoal/dívida/
+ * composição/garantias/operações e fechamento) serão adicionados em
+ * commits subsequentes.
  */
 
 import PptxGenJS from "pptxgenjs";
@@ -86,6 +88,46 @@ function fmtPctSign(frac: number): string {
 /** Cor a usar para valores de crescimento (verde positivo, vermelho negativo). */
 function growthColor(frac: number): string {
   return frac >= 0 ? COLORS.success : COLORS.danger;
+}
+
+/** Formata uma fração decimal como percentual BR sem sinal explícito. */
+function fmtPct(frac: number): string {
+  const pct = frac * 100;
+  return `${pct.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+/**
+ * Agrega uma lista de `CategoriaReceitaDetalhe` somando os históricos
+ * anuais por ano e recalculando os percentuais de crescimento sobre a
+ * série agregada. Usado em slides de resumo (18, 27) quando precisamos
+ * mostrar um "total por grupo" com crescimento coerente.
+ */
+function aggregateDetalhes(
+  dets: CategoriaReceitaDetalhe[],
+): { valor: number; cresc5a: number; crescAnual: number } {
+  if (dets.length === 0) return { valor: 0, cresc5a: 0, crescAnual: 0 };
+
+  const anoMap = new Map<number, number>();
+  for (const d of dets) {
+    for (const h of d.historicoAnual) {
+      anoMap.set(h.ano, (anoMap.get(h.ano) ?? 0) + h.valor);
+    }
+  }
+  const sorted = [...anoMap.entries()].sort((a, b) => a[0] - b[0]);
+
+  const valorAtual = sorted[sorted.length - 1]?.[1] ?? 0;
+  const valorInicio = sorted[0]?.[1] ?? 0;
+  const valorAnterior = sorted[sorted.length - 2]?.[1] ?? 0;
+
+  const cresc5a =
+    valorInicio > 0 ? (valorAtual - valorInicio) / valorInicio : 0;
+  const crescAnual =
+    valorAnterior > 0 ? (valorAtual - valorAnterior) / valorAnterior : 0;
+
+  return { valor: valorAtual, cresc5a, crescAnual };
 }
 
 // =========================================================================
@@ -1048,6 +1090,440 @@ function addSlide13TotalTributarias(pres: Pptx, data: AudienciaData): void {
 }
 
 // =========================================================================
+// Slides 18 e 26 — Resumo tabulado (próprias e transferências)
+// =========================================================================
+
+interface ResumoRow {
+  label: string;
+  valor: number;
+  cresc5a: number;
+  crescAnual: number;
+}
+
+/**
+ * Renderiza um slide de resumo com um banner de total, uma tabela de
+ * categorias com crescimentos e um rodapé. Reaproveitado pelos slides
+ * 18 (Receitas Próprias) e 26 (Transferências Correntes).
+ */
+function addResumoTabelaSlide(
+  pres: Pptx,
+  data: AudienciaData,
+  args: {
+    titulo: string;
+    bannerLabel: string;
+    totalLabel: string;
+    totalValor: number;
+    rows: ResumoRow[];
+    pageNum: number;
+  },
+): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, args.titulo);
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 6.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  // Banner com total
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 1.4,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText(args.bannerLabel, {
+    x: 1.5,
+    y: 1.45,
+    w: SLIDE_W - 3.0,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtMi(args.totalValor), {
+    x: 1.5,
+    y: 1.9,
+    w: SLIDE_W - 3.0,
+    h: 0.9,
+    fontFace: FONT,
+    fontSize: 40,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Tabela
+  const headerCellOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.primary },
+    align: "center" as const,
+    valign: "middle" as const,
+  };
+
+  const headerRow = [
+    { text: "Categoria", options: { ...headerCellOpts, align: "left" as const } },
+    { text: "Arrecadado", options: headerCellOpts },
+    { text: "Cresc. 5 anos", options: headerCellOpts },
+    { text: "Cresc. Anual", options: headerCellOpts },
+  ];
+
+  const bodyRows = args.rows.map((r) => [
+    {
+      text: r.label,
+      options: {
+        color: COLORS.dark,
+        align: "left" as const,
+        valign: "middle" as const,
+      },
+    },
+    {
+      text: fmtMi(r.valor),
+      options: {
+        color: COLORS.dark,
+        align: "right" as const,
+        valign: "middle" as const,
+      },
+    },
+    {
+      text: fmtPctSign(r.cresc5a),
+      options: {
+        color: growthColor(r.cresc5a),
+        bold: true,
+        align: "right" as const,
+        valign: "middle" as const,
+      },
+    },
+    {
+      text: fmtPctSign(r.crescAnual),
+      options: {
+        color: growthColor(r.crescAnual),
+        bold: true,
+        align: "right" as const,
+        valign: "middle" as const,
+      },
+    },
+  ]);
+
+  const totalRowOpts = {
+    bold: true,
+    color: COLORS.white,
+    fill: { color: COLORS.accent },
+    valign: "middle" as const,
+  };
+  const totalRow = [
+    { text: args.totalLabel, options: { ...totalRowOpts, align: "left" as const } },
+    {
+      text: fmtMi(args.totalValor),
+      options: { ...totalRowOpts, align: "right" as const },
+    },
+    { text: "", options: totalRowOpts },
+    { text: "", options: totalRowOpts },
+  ];
+
+  slide.addTable([headerRow, ...bodyRows, totalRow], {
+    x: 1.5,
+    y: 3.2,
+    w: SLIDE_W - 3.0,
+    h: 3.6,
+    fontFace: FONT,
+    fontSize: 14,
+    border: { type: "solid", pt: 0.5, color: COLORS.muted },
+    colW: [4.333, 2.5, 1.75, 1.75],
+  });
+
+  addFooterBar(pres, slide, data, args.pageNum);
+}
+
+// =========================================================================
+// Slide 18 — Resumo das Receitas Próprias Municipais
+// =========================================================================
+
+function addSlide18ResumoProprias(pres: Pptx, data: AudienciaData): void {
+  const tributariasAgg = aggregateDetalhes([
+    data.tributarias.iss,
+    data.tributarias.iptu,
+    data.tributarias.itbi,
+    data.tributarias.ir,
+    data.tributarias.taxas,
+  ]);
+
+  const propriasAgg = aggregateDetalhes([
+    data.tributarias.iss,
+    data.tributarias.iptu,
+    data.tributarias.itbi,
+    data.tributarias.ir,
+    data.tributarias.taxas,
+    data.contribuicoes.sociais,
+    data.contribuicoes.cosip,
+    data.receitaPatrimonial,
+    data.outrasReceitasCorrentes,
+  ]);
+
+  const rows: ResumoRow[] = [
+    {
+      label: "Tributárias (total)",
+      valor: tributariasAgg.valor,
+      cresc5a: tributariasAgg.cresc5a,
+      crescAnual: tributariasAgg.crescAnual,
+    },
+    {
+      label: data.contribuicoes.sociais.label,
+      valor: data.contribuicoes.sociais.valorArrecadado,
+      cresc5a: data.contribuicoes.sociais.crescimento5a,
+      crescAnual: data.contribuicoes.sociais.crescimentoAnual,
+    },
+    {
+      label: data.contribuicoes.cosip.label,
+      valor: data.contribuicoes.cosip.valorArrecadado,
+      cresc5a: data.contribuicoes.cosip.crescimento5a,
+      crescAnual: data.contribuicoes.cosip.crescimentoAnual,
+    },
+    {
+      label: data.receitaPatrimonial.label,
+      valor: data.receitaPatrimonial.valorArrecadado,
+      cresc5a: data.receitaPatrimonial.crescimento5a,
+      crescAnual: data.receitaPatrimonial.crescimentoAnual,
+    },
+    {
+      label: data.outrasReceitasCorrentes.label,
+      valor: data.outrasReceitasCorrentes.valorArrecadado,
+      cresc5a: data.outrasReceitasCorrentes.crescimento5a,
+      crescAnual: data.outrasReceitasCorrentes.crescimentoAnual,
+    },
+  ];
+
+  addResumoTabelaSlide(pres, data, {
+    titulo: "RECEITAS PRÓPRIAS MUNICIPAIS",
+    bannerLabel: "TOTAL DAS RECEITAS PRÓPRIAS",
+    totalLabel: "TOTAL DAS PRÓPRIAS",
+    totalValor: propriasAgg.valor,
+    rows,
+    pageNum: 18,
+  });
+}
+
+// =========================================================================
+// Slide 26 — Resumo das Transferências Correntes
+// =========================================================================
+
+function addSlide26ResumoTransferencias(pres: Pptx, data: AudienciaData): void {
+  const rows: ResumoRow[] = [
+    {
+      label: data.transferencias.uniaoFpm.label,
+      valor: data.transferencias.uniaoFpm.valorArrecadado,
+      cresc5a: data.transferencias.uniaoFpm.crescimento5a,
+      crescAnual: data.transferencias.uniaoFpm.crescimentoAnual,
+    },
+    {
+      label: data.transferencias.uniaoSus.label,
+      valor: data.transferencias.uniaoSus.valorArrecadado,
+      cresc5a: data.transferencias.uniaoSus.crescimento5a,
+      crescAnual: data.transferencias.uniaoSus.crescimentoAnual,
+    },
+    {
+      label: data.transferencias.uniaoOutras.label,
+      valor: data.transferencias.uniaoOutras.valorArrecadado,
+      cresc5a: data.transferencias.uniaoOutras.crescimento5a,
+      crescAnual: data.transferencias.uniaoOutras.crescimentoAnual,
+    },
+    {
+      label: data.transferencias.estadoIcms.label,
+      valor: data.transferencias.estadoIcms.valorArrecadado,
+      cresc5a: data.transferencias.estadoIcms.crescimento5a,
+      crescAnual: data.transferencias.estadoIcms.crescimentoAnual,
+    },
+    {
+      label: data.transferencias.estadoIpva.label,
+      valor: data.transferencias.estadoIpva.valorArrecadado,
+      cresc5a: data.transferencias.estadoIpva.crescimento5a,
+      crescAnual: data.transferencias.estadoIpva.crescimentoAnual,
+    },
+    {
+      label: data.transferencias.estadoOutras.label,
+      valor: data.transferencias.estadoOutras.valorArrecadado,
+      cresc5a: data.transferencias.estadoOutras.crescimento5a,
+      crescAnual: data.transferencias.estadoOutras.crescimentoAnual,
+    },
+  ];
+
+  addResumoTabelaSlide(pres, data, {
+    titulo: "RESUMO DAS TRANSFERÊNCIAS CORRENTES",
+    bannerLabel: "TOTAL DAS TRANSFERÊNCIAS",
+    totalLabel: "TOTAL DAS TRANSFERÊNCIAS",
+    totalValor: data.transferencias.total.valorArrecadado,
+    rows,
+    pageNum: 26,
+  });
+}
+
+// =========================================================================
+// Slide 27 — Receita Total (destaque próprias vs transferidos)
+// =========================================================================
+
+function addSlide27ReceitaTotal(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RECEITA TOTAL ARRECADADA");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 6.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  // Uso o ano mais recente da dependência financeira (5 anos coletados)
+  const dep = data.dependenciaFinanceira;
+  const latest = dep.length > 0 ? dep[dep.length - 1] : null;
+  const proprios = latest?.proprios ?? 0;
+  const transferidos = latest?.transferidos ?? 0;
+  const total = proprios + transferidos;
+  const pctProp = latest?.percentProprios ?? 0;
+  const pctTransf = latest?.percentTransferidos ?? 0;
+
+  // Banner grande com o valor total
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 1.6,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("RECEITA TOTAL ARRECADADA", {
+    x: 1.5,
+    y: 1.5,
+    w: SLIDE_W - 3.0,
+    h: 0.5,
+    fontFace: FONT,
+    fontSize: 15,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtMi(total), {
+    x: 1.5,
+    y: 2.0,
+    w: SLIDE_W - 3.0,
+    h: 1.0,
+    fontFace: FONT,
+    fontSize: 46,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Dois cards lado a lado: Próprias vs Transferidos
+  const cardY = 3.4;
+  const cardH = 3.3;
+  const cardW = 5.6;
+  const cardGap = 0.333;
+  const totalCardsW = 2 * cardW + cardGap;
+  const card1X = (SLIDE_W - totalCardsW) / 2;
+  const card2X = card1X + cardW + cardGap;
+
+  const drawCard = (
+    x: number,
+    label: string,
+    valor: number,
+    pct: number,
+  ): void => {
+    slide.addShape(pres.ShapeType.rect, {
+      x,
+      y: cardY,
+      w: cardW,
+      h: cardH,
+      fill: { color: COLORS.light },
+      line: { color: COLORS.accent, width: 2 },
+    });
+    slide.addText(label, {
+      x,
+      y: cardY + 0.2,
+      w: cardW,
+      h: 0.45,
+      fontFace: FONT,
+      fontSize: 14,
+      bold: true,
+      charSpacing: 3,
+      color: COLORS.primary,
+      align: "center",
+    });
+    slide.addText(fmtMi(valor), {
+      x,
+      y: cardY + 0.75,
+      w: cardW,
+      h: 0.85,
+      fontFace: FONT,
+      fontSize: 28,
+      bold: true,
+      color: COLORS.dark,
+      align: "center",
+      valign: "middle",
+    });
+    slide.addShape(pres.ShapeType.line, {
+      x: x + 1.0,
+      y: cardY + 1.75,
+      w: cardW - 2.0,
+      h: 0,
+      line: { color: COLORS.accent, width: 1 },
+    });
+    slide.addText(fmtPct(pct), {
+      x,
+      y: cardY + 1.95,
+      w: cardW,
+      h: 0.9,
+      fontFace: FONT,
+      fontSize: 42,
+      bold: true,
+      color: COLORS.accent,
+      align: "center",
+      valign: "middle",
+    });
+    slide.addText("do total arrecadado", {
+      x,
+      y: cardY + 2.85,
+      w: cardW,
+      h: 0.35,
+      fontFace: FONT,
+      fontSize: 12,
+      italic: true,
+      color: COLORS.muted,
+      align: "center",
+    });
+  };
+
+  drawCard(card1X, "RECEITAS PRÓPRIAS", proprios, pctProp);
+  drawCard(card2X, "RECEITAS TRANSFERIDAS", transferidos, pctTransf);
+
+  addFooterBar(pres, slide, data, 27);
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
@@ -1057,9 +1533,9 @@ function addSlide13TotalTributarias(pres: Pptx, data: AudienciaData): void {
  * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
  *
- * NOTA: implementação parcial — por ora apenas os slides 1 a 13 estão
- * criados. Os demais (14 a 44) serão adicionados em iterações seguintes,
- * em commits subsequentes para permitir revisão incremental.
+ * NOTA: implementação parcial — por ora os slides 1 a 27 estão criados.
+ * Os demais (28 a 44) serão adicionados em iterações seguintes, em
+ * commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
   data: AudienciaData,
@@ -1094,9 +1570,46 @@ export async function buildAudienciaPptx(
   // Slide 13 — Total das Receitas Tributárias
   addSlide13TotalTributarias(pres, data);
 
-  // TODO: slides 14 a 44 (contribuições, patrimoniais, transferências,
-  // dependência financeira, balanço, RCL, resultados, indicadores,
-  // RGF e fechamento).
+  // Slides 14 e 15 — Receitas de Contribuições
+  const tituloContrib = "Receitas Municipais  —  Contribuições";
+  addReceitaDetalheSlide(
+    pres, data, data.contribuicoes.sociais, tituloContrib, 14,
+  );
+  addReceitaDetalheSlide(
+    pres, data, data.contribuicoes.cosip, tituloContrib, 15,
+  );
+
+  // Slides 16 e 17 — Patrimoniais e Outras Receitas Correntes
+  addReceitaDetalheSlide(
+    pres, data, data.receitaPatrimonial,
+    "Receitas Municipais  —  Patrimoniais", 16,
+  );
+  addReceitaDetalheSlide(
+    pres, data, data.outrasReceitasCorrentes,
+    "Receitas Municipais  —  Outras Correntes", 17,
+  );
+
+  // Slide 18 — Resumo das Receitas Próprias Municipais
+  addSlide18ResumoProprias(pres, data);
+
+  // Slides 19 a 25 — Transferências Correntes (total + 6 detalhes)
+  const tituloTransf = "Receitas Municipais  —  Transferências Correntes";
+  addReceitaDetalheSlide(pres, data, data.transferencias.total, tituloTransf, 19);
+  addReceitaDetalheSlide(pres, data, data.transferencias.uniaoFpm, tituloTransf, 20);
+  addReceitaDetalheSlide(pres, data, data.transferencias.uniaoSus, tituloTransf, 21);
+  addReceitaDetalheSlide(pres, data, data.transferencias.uniaoOutras, tituloTransf, 22);
+  addReceitaDetalheSlide(pres, data, data.transferencias.estadoIcms, tituloTransf, 23);
+  addReceitaDetalheSlide(pres, data, data.transferencias.estadoIpva, tituloTransf, 24);
+  addReceitaDetalheSlide(pres, data, data.transferencias.estadoOutras, tituloTransf, 25);
+
+  // Slide 26 — Resumo das Transferências
+  addSlide26ResumoTransferencias(pres, data);
+
+  // Slide 27 — Receita Total (próprias vs transferidos)
+  addSlide27ReceitaTotal(pres, data);
+
+  // TODO: slides 28 a 44 (dependência financeira, balanço, RCL,
+  // resultados, indicadores, RGF e fechamento).
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return out as unknown as Buffer;
