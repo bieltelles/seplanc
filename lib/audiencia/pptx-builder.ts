@@ -7,12 +7,13 @@
  *
  * ATENÇÃO — IMPLEMENTAÇÃO PARCIAL
  * -------------------------------
- * Por ora os slides 1 a 32 (capa, apresentador, objetivo, ofícios, RREO
+ * Por ora os slides 1 a 37 (capa, apresentador, objetivo, ofícios, RREO
  * intro/notas, receitas tributárias/contribuições/patrimoniais/outras,
  * resumo de próprias, transferências, receita total, dependência
- * financeira e balanço orçamentário) estão implementados. Os slides
- * 33 a 44 (RCL, resultados, indicadores, RGF e fechamento) serão
- * adicionados em commits subsequentes.
+ * financeira, balanço orçamentário, RCL, resultados primário/nominal
+ * e indicadores de educação e saúde) estão implementados. Os slides
+ * 38 a 44 (RGF pessoal/dívida/composição/garantias/operações e
+ * fechamento) serão adicionados em commits subsequentes.
  */
 
 import PptxGenJS from "pptxgenjs";
@@ -2214,6 +2215,1008 @@ function addSlide32BalancoResultado(pres: Pptx, data: AudienciaData): void {
 }
 
 // =========================================================================
+// Slide 33 — RCL (introdução)
+// =========================================================================
+
+/**
+ * Slide de abertura da seção de RCL (Receita Corrente Líquida).
+ * Descreve o conceito conforme LC 101/2000 Art. 2º, IV e detalha as
+ * deduções legais previstas em lei.
+ */
+function addSlide33RclIntro(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RECEITA CORRENTE LÍQUIDA  —  RCL");
+
+  slide.addText("Receita Corrente Líquida", {
+    x: 1.0,
+    y: 1.15,
+    w: SLIDE_W - 2.0,
+    h: 0.8,
+    fontFace: FONT,
+    fontSize: 30,
+    bold: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  slide.addText(
+    "A Receita Corrente Líquida (RCL) é o somatório das receitas " +
+      "correntes do ente municipal — tributárias, de contribuições, " +
+      "patrimoniais, industriais, agropecuárias, de serviços, " +
+      "transferências correntes e outras receitas correntes — " +
+      "apurada nos últimos doze meses, deduzidas as contribuições " +
+      "dos servidores para o custeio do seu sistema de previdência " +
+      "e assistência social e as receitas provenientes da " +
+      "compensação financeira referida no § 9º do art. 201 da " +
+      "Constituição Federal. A RCL é a base de cálculo dos limites " +
+      "de despesa com pessoal e de endividamento previstos na LRF.",
+    {
+      x: 1.0,
+      y: 2.2,
+      w: SLIDE_W - 2.0,
+      h: 3.5,
+      fontFace: FONT,
+      fontSize: 16,
+      color: COLORS.dark,
+      align: "justify",
+      valign: "top",
+      paraSpaceAfter: 8,
+    },
+  );
+
+  // Caixa com base legal
+  slide.addShape(pres.ShapeType.rect, {
+    x: 3.0,
+    y: 5.95,
+    w: SLIDE_W - 6.0,
+    h: 0.75,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 1.5 },
+  });
+  slide.addText("LC 101/2000, Art. 2º, IV  —  RREO Anexo 03", {
+    x: 3.0,
+    y: 5.95,
+    w: SLIDE_W - 6.0,
+    h: 0.75,
+    fontFace: FONT,
+    fontSize: 14,
+    bold: true,
+    italic: true,
+    color: COLORS.primary,
+    align: "center",
+    valign: "middle",
+  });
+
+  addFooterBar(pres, slide, data, 33);
+}
+
+// =========================================================================
+// Slide 34 — RCL: valor apurado e RCL ajustada
+// =========================================================================
+
+/**
+ * Apresenta o valor da RCL dos últimos 12 meses em um banner central
+ * e, abaixo, dois cards com a RCL ajustada para os limites de
+ * endividamento e de despesa com pessoal.
+ */
+function addSlide34RclValor(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RECEITA CORRENTE LÍQUIDA  —  APURAÇÃO");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const rcl = data.rcl;
+  if (!rcl) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RREO Anexo 03 não puderam ser carregados para este " +
+        "período.",
+    );
+    addFooterBar(pres, slide, data, 34);
+    return;
+  }
+
+  // Banner com a RCL total
+  slide.addShape(pres.ShapeType.rect, {
+    x: 1.5,
+    y: 1.4,
+    w: SLIDE_W - 3.0,
+    h: 1.8,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+  slide.addText("RECEITA CORRENTE LÍQUIDA  —  ÚLTIMOS 12 MESES", {
+    x: 1.5,
+    y: 1.55,
+    w: SLIDE_W - 3.0,
+    h: 0.5,
+    fontFace: FONT,
+    fontSize: 15,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.gold,
+    align: "center",
+  });
+  slide.addText(fmtMi(rcl.valorTotal), {
+    x: 1.5,
+    y: 2.05,
+    w: SLIDE_W - 3.0,
+    h: 1.15,
+    fontFace: FONT,
+    fontSize: 46,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Dois cards abaixo: RCL ajustada (endividamento) e RCL ajustada (pessoal)
+  const cardY = 3.65;
+  const cardH = 2.9;
+  const cardW = 5.6;
+  const cardGap = 0.333;
+  const totalCardsW = 2 * cardW + cardGap;
+  const card1X = (SLIDE_W - totalCardsW) / 2;
+  const card2X = card1X + cardW + cardGap;
+
+  const drawRclAjustadaCard = (
+    x: number,
+    label: string,
+    finalidade: string,
+    valor: number,
+  ): void => {
+    slide.addShape(pres.ShapeType.rect, {
+      x,
+      y: cardY,
+      w: cardW,
+      h: cardH,
+      fill: { color: COLORS.light },
+      line: { color: COLORS.accent, width: 2 },
+    });
+    slide.addText(label, {
+      x,
+      y: cardY + 0.25,
+      w: cardW,
+      h: 0.5,
+      fontFace: FONT,
+      fontSize: 14,
+      bold: true,
+      charSpacing: 3,
+      color: COLORS.primary,
+      align: "center",
+    });
+    slide.addShape(pres.ShapeType.line, {
+      x: x + 1.0,
+      y: cardY + 0.85,
+      w: cardW - 2.0,
+      h: 0,
+      line: { color: COLORS.accent, width: 1 },
+    });
+    slide.addText(fmtMi(valor), {
+      x,
+      y: cardY + 1.0,
+      w: cardW,
+      h: 1.1,
+      fontFace: FONT,
+      fontSize: 32,
+      bold: true,
+      color: COLORS.dark,
+      align: "center",
+      valign: "middle",
+    });
+    slide.addText(finalidade, {
+      x: x + 0.3,
+      y: cardY + 2.25,
+      w: cardW - 0.6,
+      h: 0.5,
+      fontFace: FONT,
+      fontSize: 12,
+      italic: true,
+      color: COLORS.muted,
+      align: "center",
+    });
+  };
+
+  drawRclAjustadaCard(
+    card1X,
+    "RCL AJUSTADA  —  ENDIVIDAMENTO",
+    "Base para cálculo dos limites de dívida consolidada e operações de crédito",
+    rcl.ajustadaEndividamento,
+  );
+  drawRclAjustadaCard(
+    card2X,
+    "RCL AJUSTADA  —  PESSOAL",
+    "Base para cálculo do limite de despesa total com pessoal",
+    rcl.ajustadaPessoal,
+  );
+
+  addFooterBar(pres, slide, data, 34);
+}
+
+// =========================================================================
+// Slide 35 — Resultado Primário e Nominal
+// =========================================================================
+
+/**
+ * Apresenta, em dois cards lado a lado, o Resultado Primário
+ * (capacidade de pagamento) e o Resultado Nominal (grau de
+ * endividamento), este último com as DCLs do quadrimestre anterior
+ * e atual. Atenção à inversão semântica no nominal: valor positivo
+ * representa aumento da DCL (desfavorável — vermelho) e valor
+ * negativo representa redução da DCL (favorável — verde).
+ */
+function addSlide35Resultados(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "RESULTADO PRIMÁRIO E NOMINAL");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const res = data.resultados;
+  if (!res) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RREO Anexo 06 não puderam ser carregados para este " +
+        "período.",
+    );
+    addFooterBar(pres, slide, data, 35);
+    return;
+  }
+
+  // Dois cards
+  const cardY = 1.55;
+  const cardH = 5.0;
+  const cardW = 5.6;
+  const cardGap = 0.333;
+  const totalCardsW = 2 * cardW + cardGap;
+  const card1X = (SLIDE_W - totalCardsW) / 2;
+  const card2X = card1X + cardW + cardGap;
+
+  // --------- Card 1: Resultado Primário ---------
+  const primario = res.resultadoPrimario;
+  const primarioSuperavit = primario >= 0;
+  const corPrimario = primarioSuperavit ? COLORS.success : COLORS.danger;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: card1X,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 2 },
+  });
+  slide.addText("RESULTADO PRIMÁRIO", {
+    x: card1X,
+    y: cardY + 0.3,
+    w: cardW,
+    h: 0.5,
+    fontFace: FONT,
+    fontSize: 16,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.primary,
+    align: "center",
+  });
+  slide.addText("Capacidade de pagamento do ente", {
+    x: card1X,
+    y: cardY + 0.85,
+    w: cardW,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "center",
+  });
+  slide.addShape(pres.ShapeType.line, {
+    x: card1X + 1.0,
+    y: cardY + 1.3,
+    w: cardW - 2.0,
+    h: 0,
+    line: { color: COLORS.accent, width: 1 },
+  });
+  slide.addText(primarioSuperavit ? "SUPERÁVIT" : "DÉFICIT", {
+    x: card1X,
+    y: cardY + 1.5,
+    w: cardW,
+    h: 0.55,
+    fontFace: FONT,
+    fontSize: 18,
+    bold: true,
+    charSpacing: 3,
+    color: corPrimario,
+    align: "center",
+  });
+  slide.addText(fmtMi(Math.abs(primario)), {
+    x: card1X,
+    y: cardY + 2.1,
+    w: cardW,
+    h: 1.4,
+    fontFace: FONT,
+    fontSize: 38,
+    bold: true,
+    color: COLORS.dark,
+    align: "center",
+    valign: "middle",
+  });
+  slide.addText(
+    primarioSuperavit
+      ? "Receitas primárias > despesas primárias"
+      : "Despesas primárias > receitas primárias",
+    {
+      x: card1X + 0.3,
+      y: cardY + 3.65,
+      w: cardW - 0.6,
+      h: 0.4,
+      fontFace: FONT,
+      fontSize: 11,
+      italic: true,
+      color: COLORS.muted,
+      align: "center",
+    },
+  );
+  slide.addText("RREO Anexo 06", {
+    x: card1X,
+    y: cardY + 4.25,
+    w: cardW,
+    h: 0.4,
+    fontFace: FONT,
+    fontSize: 10,
+    italic: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  // --------- Card 2: Resultado Nominal ---------
+  // Atenção: semântica INVERTIDA — aumento da DCL é desfavorável.
+  const nominal = res.resultadoNominal;
+  const nominalFavoravel = nominal <= 0;
+  const corNominal = nominalFavoravel ? COLORS.success : COLORS.danger;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: card2X,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 2 },
+  });
+  slide.addText("RESULTADO NOMINAL", {
+    x: card2X,
+    y: cardY + 0.3,
+    w: cardW,
+    h: 0.5,
+    fontFace: FONT,
+    fontSize: 16,
+    bold: true,
+    charSpacing: 4,
+    color: COLORS.primary,
+    align: "center",
+  });
+  slide.addText("Variação da Dívida Consolidada Líquida (DCL)", {
+    x: card2X,
+    y: cardY + 0.85,
+    w: cardW,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "center",
+  });
+  slide.addShape(pres.ShapeType.line, {
+    x: card2X + 1.0,
+    y: cardY + 1.3,
+    w: cardW - 2.0,
+    h: 0,
+    line: { color: COLORS.accent, width: 1 },
+  });
+  slide.addText(nominalFavoravel ? "REDUÇÃO DA DCL" : "AUMENTO DA DCL", {
+    x: card2X,
+    y: cardY + 1.5,
+    w: cardW,
+    h: 0.55,
+    fontFace: FONT,
+    fontSize: 18,
+    bold: true,
+    charSpacing: 3,
+    color: corNominal,
+    align: "center",
+  });
+  slide.addText(fmtMi(Math.abs(nominal)), {
+    x: card2X,
+    y: cardY + 2.1,
+    w: cardW,
+    h: 1.4,
+    fontFace: FONT,
+    fontSize: 38,
+    bold: true,
+    color: COLORS.dark,
+    align: "center",
+    valign: "middle",
+  });
+
+  // Linhas com DCL anterior e atual
+  slide.addText(
+    [
+      {
+        text: "DCL anterior: ",
+        options: { color: COLORS.muted, fontSize: 11, italic: true },
+      },
+      {
+        text: fmtMi(res.dclAnterior),
+        options: { color: COLORS.dark, fontSize: 11, bold: true },
+      },
+      { text: "     ", options: { fontSize: 11 } },
+      {
+        text: "DCL atual: ",
+        options: { color: COLORS.muted, fontSize: 11, italic: true },
+      },
+      {
+        text: fmtMi(res.dclAtual),
+        options: { color: COLORS.dark, fontSize: 11, bold: true },
+      },
+    ],
+    {
+      x: card2X + 0.2,
+      y: cardY + 3.65,
+      w: cardW - 0.4,
+      h: 0.4,
+      fontFace: FONT,
+      align: "center",
+    },
+  );
+  slide.addText("RREO Anexo 06", {
+    x: card2X,
+    y: cardY + 4.25,
+    w: cardW,
+    h: 0.4,
+    fontFace: FONT,
+    fontSize: 10,
+    italic: true,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  addFooterBar(pres, slide, data, 35);
+}
+
+// =========================================================================
+// Slides 36 e 37 — Indicadores constitucionais (educação e saúde)
+// =========================================================================
+
+/**
+ * Desenha um card de indicador (mínimo × aplicado × percentual) com
+ * cores semáforo baseadas no cumprimento do limite mínimo.
+ */
+function drawIndicadorCard(
+  pres: Pptx,
+  slide: Slide,
+  args: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    titulo: string;
+    minimoLabel: string;
+    minimoValor: string;
+    aplicadoLabel: string;
+    aplicadoValor: string;
+    percentual: number;
+    limiteMinimo: number;
+    fonte: string;
+  },
+): void {
+  const atingido = args.percentual >= args.limiteMinimo;
+  const corStatus = atingido ? COLORS.success : COLORS.danger;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: args.x,
+    y: args.y,
+    w: args.w,
+    h: args.h,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 2 },
+  });
+
+  slide.addText(args.titulo, {
+    x: args.x,
+    y: args.y + 0.15,
+    w: args.w,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: COLORS.primary,
+    align: "center",
+  });
+
+  slide.addShape(pres.ShapeType.line, {
+    x: args.x + 0.5,
+    y: args.y + 0.65,
+    w: args.w - 1.0,
+    h: 0,
+    line: { color: COLORS.accent, width: 1 },
+  });
+
+  // Mínimo
+  slide.addText(args.minimoLabel, {
+    x: args.x + 0.2,
+    y: args.y + 0.8,
+    w: args.w - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 10,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+  slide.addText(args.minimoValor, {
+    x: args.x + 0.2,
+    y: args.y + 0.8,
+    w: args.w - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    color: COLORS.dark,
+    align: "right",
+  });
+
+  // Aplicado
+  slide.addText(args.aplicadoLabel, {
+    x: args.x + 0.2,
+    y: args.y + 1.15,
+    w: args.w - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 10,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+  slide.addText(args.aplicadoValor, {
+    x: args.x + 0.2,
+    y: args.y + 1.15,
+    w: args.w - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    color: COLORS.dark,
+    align: "right",
+  });
+
+  // Percentual grande
+  slide.addText(fmtPct(args.percentual), {
+    x: args.x,
+    y: args.y + 1.6,
+    w: args.w,
+    h: 1.1,
+    fontFace: FONT,
+    fontSize: 42,
+    bold: true,
+    color: corStatus,
+    align: "center",
+    valign: "middle",
+  });
+
+  slide.addText(atingido ? "LIMITE ATINGIDO" : "LIMITE NÃO ATINGIDO", {
+    x: args.x,
+    y: args.y + args.h - 0.75,
+    w: args.w,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    charSpacing: 2,
+    color: corStatus,
+    align: "center",
+  });
+
+  slide.addText(args.fonte, {
+    x: args.x,
+    y: args.y + args.h - 0.4,
+    w: args.w,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 9,
+    italic: true,
+    color: COLORS.muted,
+    align: "center",
+  });
+}
+
+/**
+ * Desenha o bloco superior dos slides 36/37 com as três linhas de
+ * receita (Impostos, Transferências, Total) que servem de base para
+ * os percentuais constitucionais.
+ */
+function drawReceitaBaseBlock(
+  pres: Pptx,
+  slide: Slide,
+  args: {
+    impostos: number;
+    transferencias: number;
+    total: number;
+  },
+): void {
+  const blockX = 0.8;
+  const blockY = 1.4;
+  const blockW = SLIDE_W - 1.6;
+  const blockH = 0.95;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: blockX,
+    y: blockY,
+    w: blockW,
+    h: blockH,
+    fill: { color: COLORS.primary },
+    line: { color: COLORS.primary },
+  });
+
+  slide.addText("RECEITA-BASE PARA O INDICADOR CONSTITUCIONAL", {
+    x: blockX,
+    y: blockY + 0.08,
+    w: blockW,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    charSpacing: 3,
+    color: COLORS.gold,
+    align: "center",
+  });
+
+  slide.addText(
+    [
+      {
+        text: "Impostos: ",
+        options: { color: COLORS.light, fontSize: 14, italic: true },
+      },
+      {
+        text: fmtMi(args.impostos),
+        options: { color: COLORS.white, fontSize: 15, bold: true },
+      },
+      { text: "      +      ", options: { color: COLORS.gold, fontSize: 15 } },
+      {
+        text: "Transferências: ",
+        options: { color: COLORS.light, fontSize: 14, italic: true },
+      },
+      {
+        text: fmtMi(args.transferencias),
+        options: { color: COLORS.white, fontSize: 15, bold: true },
+      },
+      { text: "      =      ", options: { color: COLORS.gold, fontSize: 15 } },
+      {
+        text: "Total: ",
+        options: { color: COLORS.light, fontSize: 14, italic: true },
+      },
+      {
+        text: fmtMi(args.total),
+        options: { color: COLORS.gold, fontSize: 16, bold: true },
+      },
+    ],
+    {
+      x: blockX,
+      y: blockY + 0.4,
+      w: blockW,
+      h: 0.5,
+      fontFace: FONT,
+      align: "center",
+      valign: "middle",
+    },
+  );
+}
+
+// =========================================================================
+// Slide 36 — Indicador de Educação (MDE 25% + FUNDEB)
+// =========================================================================
+
+function addSlide36IndicadorEducacao(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "INDICADORES CONSTITUCIONAIS  —  EDUCAÇÃO");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const edu = data.indicadorEducacao;
+  if (!edu) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RREO Anexo 08 (Educação / FUNDEB) não puderam ser " +
+        "carregados para este período.",
+    );
+    addFooterBar(pres, slide, data, 36);
+    return;
+  }
+
+  // Linha superior com a receita-base
+  drawReceitaBaseBlock(pres, slide, {
+    impostos: edu.receitaImpostos,
+    transferencias: edu.receitaTransferencias,
+    total: edu.receitaTotal,
+  });
+
+  // Três cards lado a lado
+  const cardY = 2.65;
+  const cardH = 4.0;
+  const cardW = 4.05;
+  const cardGap = 0.25;
+  const totalCardsW = 3 * cardW + 2 * cardGap;
+  const card1X = (SLIDE_W - totalCardsW) / 2;
+  const card2X = card1X + cardW + cardGap;
+  const card3X = card2X + cardW + cardGap;
+
+  // Card 1 — MDE 25%
+  drawIndicadorCard(pres, slide, {
+    x: card1X,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    titulo: "MDE  —  MÍNIMO 25%",
+    minimoLabel: "Mínimo (25%):",
+    minimoValor: fmtMi(edu.minimoMde),
+    aplicadoLabel: "Aplicado:",
+    aplicadoValor: fmtMi(edu.aplicadoMde),
+    percentual: edu.percentualMde,
+    limiteMinimo: 0.25,
+    fonte: "CF/88 Art. 212  •  RREO Anexo 08",
+  });
+
+  // Card 2 — FUNDEB Resultado Líquido
+  const fundebLiquido = edu.resultadoLiquidoFundeb;
+  const fundebPositivo = fundebLiquido >= 0;
+  const corFundeb = fundebPositivo ? COLORS.success : COLORS.danger;
+
+  slide.addShape(pres.ShapeType.rect, {
+    x: card2X,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    fill: { color: COLORS.light },
+    line: { color: COLORS.accent, width: 2 },
+  });
+  slide.addText("FUNDEB  —  RESULTADO LÍQUIDO", {
+    x: card2X,
+    y: cardY + 0.15,
+    w: cardW,
+    h: 0.45,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: COLORS.primary,
+    align: "center",
+  });
+  slide.addShape(pres.ShapeType.line, {
+    x: card2X + 0.5,
+    y: cardY + 0.65,
+    w: cardW - 1.0,
+    h: 0,
+    line: { color: COLORS.accent, width: 1 },
+  });
+  slide.addText("Destinado (20%):", {
+    x: card2X + 0.2,
+    y: cardY + 0.8,
+    w: cardW - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 10,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+  slide.addText(fmtMi(edu.destinadoFundeb), {
+    x: card2X + 0.2,
+    y: cardY + 0.8,
+    w: cardW - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    color: COLORS.dark,
+    align: "right",
+  });
+  slide.addText("Retorno:", {
+    x: card2X + 0.2,
+    y: cardY + 1.15,
+    w: cardW - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 10,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+  slide.addText(fmtMi(edu.retornoFundeb), {
+    x: card2X + 0.2,
+    y: cardY + 1.15,
+    w: cardW - 0.4,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 11,
+    bold: true,
+    color: COLORS.dark,
+    align: "right",
+  });
+  slide.addText(fmtMi(Math.abs(fundebLiquido)), {
+    x: card2X,
+    y: cardY + 1.6,
+    w: cardW,
+    h: 1.1,
+    fontFace: FONT,
+    fontSize: 30,
+    bold: true,
+    color: corFundeb,
+    align: "center",
+    valign: "middle",
+  });
+  slide.addText(fundebPositivo ? "SUPERÁVIT" : "DÉFICIT", {
+    x: card2X,
+    y: cardY + 2.7,
+    w: cardW,
+    h: 0.4,
+    fontFace: FONT,
+    fontSize: 13,
+    bold: true,
+    charSpacing: 3,
+    color: corFundeb,
+    align: "center",
+  });
+  slide.addText(
+    fundebPositivo
+      ? "Retorno > destinado ao fundo"
+      : "Destinado > retorno do fundo",
+    {
+      x: card2X + 0.2,
+      y: cardY + cardH - 0.75,
+      w: cardW - 0.4,
+      h: 0.3,
+      fontFace: FONT,
+      fontSize: 10,
+      italic: true,
+      color: COLORS.muted,
+      align: "center",
+    },
+  );
+  slide.addText("RREO Anexo 08", {
+    x: card2X,
+    y: cardY + cardH - 0.4,
+    w: cardW,
+    h: 0.3,
+    fontFace: FONT,
+    fontSize: 9,
+    italic: true,
+    color: COLORS.muted,
+    align: "center",
+  });
+
+  // Card 3 — FUNDEB Profissionais 70%
+  drawIndicadorCard(pres, slide, {
+    x: card3X,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    titulo: "FUNDEB PROFISSIONAIS  —  MÍNIMO 70%",
+    minimoLabel: "Mínimo (70%):",
+    minimoValor: fmtMi(edu.fundebProfissionaisMinimo),
+    aplicadoLabel: "Aplicado:",
+    aplicadoValor: fmtMi(edu.fundebProfissionaisAplicado),
+    percentual: edu.fundebProfissionaisPercentual,
+    limiteMinimo: 0.7,
+    fonte: "Lei 14.113/2020 Art. 26  •  RREO Anexo 08",
+  });
+
+  addFooterBar(pres, slide, data, 36);
+}
+
+// =========================================================================
+// Slide 37 — Indicador de Saúde (ASPS 15%)
+// =========================================================================
+
+function addSlide37IndicadorSaude(pres: Pptx, data: AudienciaData): void {
+  const slide = pres.addSlide();
+  slide.background = { color: COLORS.white };
+
+  addHeaderBar(pres, slide, "INDICADORES CONSTITUCIONAIS  —  SAÚDE");
+
+  slide.addText(`PERÍODO REFERENTE: ${data.periodoRef}`, {
+    x: 0.5,
+    y: 0.85,
+    w: 7.0,
+    h: 0.35,
+    fontFace: FONT,
+    fontSize: 12,
+    italic: true,
+    color: COLORS.muted,
+    align: "left",
+  });
+
+  const saude = data.indicadorSaude;
+  if (!saude) {
+    addDadosNaoDisponiveis(
+      pres,
+      slide,
+      "Os dados do RREO Anexo 12 (Saúde / ASPS) não puderam ser " +
+        "carregados para este período.",
+    );
+    addFooterBar(pres, slide, data, 37);
+    return;
+  }
+
+  // Linha superior com a receita-base
+  drawReceitaBaseBlock(pres, slide, {
+    impostos: saude.receitaImpostos,
+    transferencias: saude.receitaTransferencias,
+    total: saude.receitaTotal,
+  });
+
+  // Um card central grande
+  const cardW = 6.5;
+  const cardH = 4.0;
+  const cardX = (SLIDE_W - cardW) / 2;
+  const cardY = 2.75;
+
+  drawIndicadorCard(pres, slide, {
+    x: cardX,
+    y: cardY,
+    w: cardW,
+    h: cardH,
+    titulo: "ASPS  —  AÇÕES E SERVIÇOS PÚBLICOS DE SAÚDE  —  MÍNIMO 15%",
+    minimoLabel: "Mínimo (15%):",
+    minimoValor: fmtMi(saude.minimoAsps),
+    aplicadoLabel: "Aplicado:",
+    aplicadoValor: fmtMi(saude.aplicadoAsps),
+    percentual: saude.percentualAsps,
+    limiteMinimo: 0.15,
+    fonte: "CF/88 Art. 198, § 2º, III  •  LC 141/2012  •  RREO Anexo 12",
+  });
+
+  addFooterBar(pres, slide, data, 37);
+}
+
+// =========================================================================
 // Função principal
 // =========================================================================
 
@@ -2223,8 +3226,8 @@ function addSlide32BalancoResultado(pres: Pptx, data: AudienciaData): void {
  * Retorna um `Buffer` pronto para ser servido em um endpoint HTTP
  * (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`).
  *
- * NOTA: implementação parcial — por ora os slides 1 a 32 estão criados.
- * Os demais (33 a 44) serão adicionados em iterações seguintes, em
+ * NOTA: implementação parcial — por ora os slides 1 a 37 estão criados.
+ * Os demais (38 a 44) serão adicionados em iterações seguintes, em
  * commits subsequentes para permitir revisão incremental.
  */
 export async function buildAudienciaPptx(
@@ -2307,8 +3310,19 @@ export async function buildAudienciaPptx(
   addSlide31BalancoDespesas(pres, data);
   addSlide32BalancoResultado(pres, data);
 
-  // TODO: slides 33 a 44 (RCL, resultados primário/nominal, indicadores
-  // educação/saúde, RGF pessoal/dívida/operações, fechamento).
+  // Slides 33 e 34 — Receita Corrente Líquida
+  addSlide33RclIntro(pres, data);
+  addSlide34RclValor(pres, data);
+
+  // Slide 35 — Resultado Primário e Nominal
+  addSlide35Resultados(pres, data);
+
+  // Slides 36 e 37 — Indicadores Constitucionais (Educação e Saúde)
+  addSlide36IndicadorEducacao(pres, data);
+  addSlide37IndicadorSaude(pres, data);
+
+  // TODO: slides 38 a 44 (RGF pessoal/dívida/composição/garantias/
+  // operações de crédito e fechamento).
 
   const out = await pres.write({ outputType: "nodebuffer" });
   return out as unknown as Buffer;
