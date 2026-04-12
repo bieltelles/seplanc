@@ -104,8 +104,12 @@ function validateSiopsHtml(html: string, expectedBimestre?: number): void {
 }
 
 /**
- * Estratégia 1: GET direto ao rel_LRF.php com query params.
- * Funciona quando o servidor aceita GET sem sessão.
+ * Estratégia 1: GET direto ao consleirespfiscalstn.php com query params.
+ * Este endpoint aceita GET sem sessão e retorna o HTML do Anexo 12 diretamente.
+ *
+ * Nota: rel_LRF.php (endpoint anterior) exige sessão PHP via POST e retorna
+ * "PASSAGEM DE PARÂMETROS INCORRETA" quando chamado via GET direto. O endpoint
+ * correto para consulta direta sem sessão é consleirespfiscalstn.php.
  */
 async function tryDirectGet(
   baseUrl: string,
@@ -116,11 +120,9 @@ async function tryDirectGet(
     cmbMUNICIPIO: params.codMunicipio,
     cmbANO: String(params.ano),
     cmbPERIODO: String(params.bimestre),
-    opcao: "1",
-    btnConsultar: "Consultar",
   });
 
-  const url = `${baseUrl}/rel_LRF.php?${qs}`;
+  const url = `${baseUrl}/consleirespfiscalstn.php?${qs}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -235,8 +237,8 @@ async function trySessionPost(
  * Busca o Anexo 12 do SIOPS para um município/ano/bimestre.
  *
  * Tenta múltiplas estratégias em sequência:
- * 1. GET direto (HTTPS)
- * 2. GET direto (HTTP)
+ * 1. GET direto a consleirespfiscalstn.php (HTTP) — mais confiável, sem SSL
+ * 2. GET direto a consleirespfiscalstn.php (HTTPS) — fallback com SSL
  * 3. Sessão+POST (HTTPS)
  * 4. Sessão+POST (HTTP)
  *
@@ -248,23 +250,26 @@ export async function fetchSiopsAnexo12Html(
 ): Promise<string> {
   const errors: string[] = [];
 
-  // Tenta Sessão + POST primeiro (fluxo correto do formulário)
+  // Tenta GET direto primeiro — consleirespfiscalstn.php aceita GET sem sessão.
+  // HTTP é tentado antes de HTTPS pois o SIOPS historicamente tem problemas de
+  // certificado SSL/TLS que causam "fetch failed" nas conexões HTTPS.
+  const basesHttpFirst = [BASES[1], BASES[0]]; // ["http://...", "https://..."]
+  for (const base of basesHttpFirst) {
+    try {
+      return await tryDirectGet(base, params);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`GET ${base}: ${msg}`);
+    }
+  }
+
+  // Tenta Sessão + POST como fallback (fluxo do formulário PHP)
   for (const base of BASES) {
     try {
       return await trySessionPost(base, params);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`POST ${base}: ${msg}`);
-    }
-  }
-
-  // Tenta GET direto como fallback
-  for (const base of BASES) {
-    try {
-      return await tryDirectGet(base, params);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`GET ${base}: ${msg}`);
     }
   }
 
