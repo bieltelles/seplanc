@@ -107,6 +107,55 @@ export async function initializeSchema() {
       descricao TEXT,
       updated_at TEXT DEFAULT (datetime('now'))
     )`,
+
+    // SIOPS Anexo 12 — Demonstrativo ASPS (Saúde)
+    `CREATE TABLE IF NOT EXISTS siops_anexo12 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exercicio_ano INTEGER NOT NULL,
+      bimestre INTEGER NOT NULL,
+      cod_ibge TEXT NOT NULL,
+      uf TEXT NOT NULL,
+      municipio TEXT NOT NULL,
+      data_homologacao TEXT,
+
+      -- Receitas (base para cálculo do mínimo 15%)
+      receita_impostos REAL DEFAULT 0,
+      receita_transferencias REAL DEFAULT 0,
+      total_receitas REAL DEFAULT 0,
+
+      -- Apuração do cumprimento do mínimo (LC 141/2012)
+      despesa_asps_empenhada REAL DEFAULT 0,
+      despesa_asps_liquidada REAL DEFAULT 0,
+      despesa_asps_paga REAL DEFAULT 0,
+      valor_aplicado_empenhada REAL DEFAULT 0,
+      valor_aplicado_liquidada REAL DEFAULT 0,
+      valor_aplicado_paga REAL DEFAULT 0,
+      despesa_minima REAL DEFAULT 0,
+      percentual_aplicado_empenhada REAL DEFAULT 0,
+      percentual_aplicado_liquidada REAL DEFAULT 0,
+      percentual_aplicado_paga REAL DEFAULT 0,
+
+      -- Receitas adicionais (transferências SUS)
+      transf_saude_uniao REAL DEFAULT 0,
+      transf_saude_estados REAL DEFAULT 0,
+      total_receitas_adicionais REAL DEFAULT 0,
+
+      -- Despesas totais
+      total_despesas_saude_empenhada REAL DEFAULT 0,
+      total_despesas_saude_liquidada REAL DEFAULT 0,
+      total_despesas_proprios_empenhada REAL DEFAULT 0,
+      total_despesas_proprios_liquidada REAL DEFAULT 0,
+
+      -- Blob JSON com dados completos para detalhamento
+      dados_completos TEXT,
+
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(exercicio_ano, bimestre, cod_ibge)
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_siops_ano_bim ON siops_anexo12(exercicio_ano, bimestre)`,
+    `CREATE INDEX IF NOT EXISTS idx_siops_ibge ON siops_anexo12(cod_ibge)`,
   ];
 
   for (const sql of statements) {

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, RefreshCw, Heart } from "lucide-react";
 
 interface UploadResult {
   success: boolean;
@@ -149,6 +149,9 @@ export default function UploadPage() {
           </CardContent>
         </Card>
 
+        {/* SIOPS Anexo 12 — Saúde */}
+        <SiopsRefreshCard onResult={(r) => setResults((prev) => [r, ...prev])} />
+
         {/* Results */}
         {results.length > 0 && (
           <Card>
@@ -170,7 +173,9 @@ export default function UploadPage() {
                       <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
                     )}
                     <div className="text-xs">
-                      {r.success && r.details ? (
+                      {r.success && r.message ? (
+                        <p className="font-medium text-green-800">{r.message}</p>
+                      ) : r.success && r.details ? (
                         <>
                           <p className="font-medium text-green-800">{r.details.label}</p>
                           <p className="text-green-700">
@@ -189,5 +194,109 @@ export default function UploadPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ====================================================================
+// SIOPS Anexo 12 — Atualização forçada
+// ====================================================================
+
+function SiopsRefreshCard({
+  onResult,
+}: {
+  onResult: (r: UploadResult) => void;
+}) {
+  const currentYear = new Date().getFullYear();
+  const [ano, setAno] = useState(currentYear);
+  const [bimestre, setBimestre] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  async function handleRefresh() {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/siops/refresh?ano=${ano}&bimestre=${bimestre}`,
+        { method: "POST" },
+      );
+      const json = await res.json();
+      if (res.ok && json.success) {
+        const resumo = json.resumo;
+        onResult({
+          success: true,
+          message: `SIOPS Anexo 12 — ${resumo?.municipio ?? "São Luís"} ${resumo?.ano ?? ano}/${resumo?.bimestre ?? bimestre}º bim: ${resumo?.percentualAplicado?.toFixed(2) ?? "?"}% aplicado em ASPS (${json.action})`,
+        });
+      } else {
+        onResult({
+          success: false,
+          error: json.error || "Falha ao buscar dados do SIOPS.",
+        });
+      }
+    } catch (err) {
+      onResult({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Heart className="h-4 w-4 text-red-500" />
+          SIOPS Anexo 12 — Saúde (LC 141/2012)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-slate-600">
+          Busca o Demonstrativo das Receitas e Despesas com Ações e Serviços
+          Públicos de Saúde (ASPS) diretamente do SIOPS/DATASUS para São
+          Luís/MA. Os dados são atualizados automaticamente todo dia 1 via cron.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium">Exercício</label>
+            <select
+              value={ano}
+              onChange={(e) => setAno(parseInt(e.target.value, 10))}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            >
+              {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium">Bimestre</label>
+            <select
+              value={bimestre}
+              onChange={(e) => setBimestre(parseInt(e.target.value, 10))}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            >
+              {[1, 2, 3, 4, 5, 6].map((b) => (
+                <option key={b} value={b}>
+                  {b}º
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            <RefreshCw
+              className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+            />
+            {loading ? "Buscando..." : "Atualizar SIOPS"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

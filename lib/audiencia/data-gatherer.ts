@@ -24,6 +24,7 @@ import { correctMonthlyRow, shouldCorrectYear } from "@/lib/ipca/correction";
 import type { TaxCategory } from "@/lib/constants/tax-categories";
 import { fetchRreoRowCols } from "./rreo-lookups";
 import { fetchRgfRowCols } from "./rgf-lookups";
+import { getSiopsAnexo12 } from "@/lib/siops/queries";
 import type {
   AudienciaData,
   AudienciaParams,
@@ -447,6 +448,44 @@ async function fetchOperacoesCredito(
 }
 
 // ==========================================================================
+// SIOPS Anexo 12 — Indicador de Saúde (ASPS)
+// ==========================================================================
+
+async function fetchIndicadorSaude(
+  ano: number,
+  bim: number,
+): Promise<import("./types").IndicadorSaudeData | null> {
+  try {
+    // São Luís/MA — código IBGE fixo para este dashboard
+    const row = await getSiopsAnexo12(ano, bim, "211130");
+    if (!row) return null;
+
+    const r = row as unknown as {
+      receita_impostos: number;
+      receita_transferencias: number;
+      total_receitas: number;
+      despesa_minima: number;
+      valor_aplicado_liquidada: number;
+      percentual_aplicado_liquidada: number;
+    };
+
+    return {
+      receitaImpostos: r.receita_impostos ?? 0,
+      receitaTransferencias: r.receita_transferencias ?? 0,
+      receitaTotal: r.total_receitas ?? 0,
+      minimoAsps: r.despesa_minima ?? 0,
+      aplicadoAsps: r.valor_aplicado_liquidada ?? 0,
+      // SIOPS armazena o percentual em escala 0-100 (ex.: 17,63).
+      // O consumidor (pptx-builder) espera fração decimal (0,1763).
+      percentualAsps: (r.percentual_aplicado_liquidada ?? 0) / 100,
+    };
+  } catch {
+    // Se a tabela ainda não existe ou erro qualquer, não bloqueia a geração
+    return null;
+  }
+}
+
+// ==========================================================================
 // Função principal
 // ==========================================================================
 
@@ -566,8 +605,10 @@ export async function gatherAudienciaData(
       fetchOperacoesCredito(ano, quadrimestre, entidade),
     ]);
 
-  // Saúde e Educação: o RREO v13 do ente não traz Anexo 08 (MDE) nem Anexo 12 (ASPS).
-  // Mantemos null como placeholder — o slide será omitido ou renderizado com aviso.
+  // ---- SIOPS Anexo 12 — Indicador de Saúde (ASPS) ----
+  const indicadorSaude = await fetchIndicadorSaude(ano, bim);
+
+  // Educação (MDE/Anexo 08): ainda não implementado — mantemos null.
   return {
     params,
     periodoRef: periodoLabel(quadrimestre, ano),
@@ -592,7 +633,7 @@ export async function gatherAudienciaData(
     rcl,
     resultados,
     indicadorEducacao: null,
-    indicadorSaude: null,
+    indicadorSaude,
     pessoal,
     dividaConsolidada,
     composicaoDivida,
