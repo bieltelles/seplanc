@@ -65,59 +65,87 @@ function isPdf(buffer: ArrayBuffer): boolean {
 }
 
 /** Valida que o HTML contém dados do Anexo 12 */
-function validateSiopsHtml(html: string): void {
-  if (html.includes("RECEITA DE IMPOSTOS") || html.includes("RECEITAS RESULTANTES")) {
-    return; // OK
+function validateSiopsHtml(html: string, expectedBimestre?: number): void {
+  if (!html.includes("RECEITA DE IMPOSTOS") && !html.includes("RECEITAS RESULTANTES")) {
+    if (html.includes("PASSAGEM DE PAR")) {
+      throw new Error("SIOPS: PASSAGEM DE PARÂMETROS INCORRETA");
+    }
+    throw new Error("SIOPS retornou HTML sem dados do Anexo 12");
   }
-  if (html.includes("PASSAGEM DE PAR")) {
-    throw new Error("SIOPS: PASSAGEM DE PARÂMETROS INCORRETA");
+
+  // Valida que o bimestre no HTML corresponde ao solicitado
+  if (expectedBimestre) {
+    const bimMatch = html.match(/(\d)\s*.?\s*Bimestre\s+de\s+(\d{4})/i);
+    if (bimMatch) {
+      const returnedBim = parseInt(bimMatch[1], 10);
+      if (returnedBim !== expectedBimestre) {
+        throw new Error(
+          `SIOPS retornou ${returnedBim}º bimestre em vez do ${expectedBimestre}º solicitado. ` +
+          `O ${expectedBimestre}º bimestre pode não estar disponível ainda.`,
+        );
+      }
+    }
   }
-  throw new Error("SIOPS retornou HTML sem dados do Anexo 12");
 }
 
 /**
- * Estratégia 1: GET direto com query params ao rel_LRF.php.
- * Não precisa de sessão — funciona quando o servidor aceita GET direto.
+ * Estratégia 1: GET direto com query params.
+ * Tenta duas URLs com nomes de parâmetro do formulário SIOPS.
  */
 async function tryDirectGet(
   baseUrl: string,
   params: SiopsFetchParams,
 ): Promise<string> {
-  const qs = new URLSearchParams({
-    S: "1",
-    UF: String(params.uf),
-    Municipio: params.codMunicipio,
-    Ano: String(params.ano),
-    Periodo: String(params.bimestre),
-    Opcao: "1",
+  // Nomes de parâmetros iguais ao formulário do SIOPS (cmbUF, cmbPERIODO etc.)
+  const cmbParams = new URLSearchParams({
+    cmbUF: String(params.uf),
+    cmbMUNICIPIO: params.codMunicipio,
+    cmbANO: String(params.ano),
+    cmbPERIODO: String(params.bimestre),
+    opcao: "1",
+    btnConsultar: "Consultar",
   });
 
-  const url = `${baseUrl}/rel_LRF.php?${qs}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  // Tenta duas URLs: consleirespfiscal.php (form principal) e rel_LRF.php
+  const urls = [
+    `${baseUrl}/consleirespfiscal.php?${cmbParams}`,
+    `${baseUrl}/rel_LRF.php?${cmbParams}`,
+  ];
 
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "text/html,application/xhtml+xml,*/*",
-        "Accept-Language": "pt-BR,pt;q=0.9",
-      },
-    });
+  let lastError: Error | null = null;
 
-    const buffer = await res.arrayBuffer();
-    if (isPdf(buffer)) {
-      throw new Error("SIOPS retornou PDF via GET direto");
+  for (const url of urls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "text/html,application/xhtml+xml,*/*",
+          "Accept-Language": "pt-BR,pt;q=0.9",
+        },
+      });
+
+      const buffer = await res.arrayBuffer();
+      if (isPdf(buffer)) {
+        lastError = new Error("SIOPS retornou PDF via GET direto");
+        continue;
+      }
+
+      const html = decodeIso8859(buffer);
+      validateSiopsHtml(html, params.bimestre);
+      return html;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const html = decodeIso8859(buffer);
-    validateSiopsHtml(html);
-    return html;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw lastError || new Error("GET direto falhou");
 }
 
 /**
@@ -193,7 +221,7 @@ async function trySessionPost(
     }
 
     const html = decodeIso8859(buffer);
-    validateSiopsHtml(html);
+    validateSiopsHtml(html, params.bimestre);
     return html;
   } finally {
     clearTimeout(t2);

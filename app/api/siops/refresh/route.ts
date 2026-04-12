@@ -53,6 +53,19 @@ export async function POST(request: NextRequest) {
     // 2. Parseia o HTML
     const data = parseSiopsAnexo12(html, params.codMunicipio, "MA");
 
+    // Verifica se o bimestre retornado corresponde ao solicitado
+    if (data.bimestre !== bimestre) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `SIOPS retornou dados do ${data.bimestre}º bimestre em vez do ${bimestre}º solicitado. O ${bimestre}º bimestre pode não estar disponível ainda no SIOPS.`,
+          bimestreRetornado: data.bimestre,
+          bimestreSolicitado: bimestre,
+        },
+        { status: 422 },
+      );
+    }
+
     // 3. Persiste no Turso
     const result = await upsertSiopsAnexo12(data);
 
