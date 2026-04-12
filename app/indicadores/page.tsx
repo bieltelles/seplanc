@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Heart,
   AlertTriangle,
@@ -13,6 +14,7 @@ import {
   Activity,
   DollarSign,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 interface SaudeData {
@@ -85,6 +87,8 @@ function formatPercent(value: number): string {
 export default function IndicadoresPage() {
   const [data, setData] = useState<SaudeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
   const [selectedAno, setSelectedAno] = useState(new Date().getFullYear());
   const [selectedBim, setSelectedBim] = useState<number | null>(null);
 
@@ -106,6 +110,44 @@ export default function IndicadoresPage() {
       setLoading(false);
     }
   }, [selectedAno, selectedBim]);
+
+  const handleRecompute = useCallback(async () => {
+    setRecomputing(true);
+    setRecomputeMsg(null);
+    try {
+      const res = await fetch(
+        `/api/saude/recompute?ano=${selectedAno}&bimestre=all`,
+        { method: "POST" },
+      );
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setRecomputeMsg(`Erro: ${json.error || "falha no recálculo"}`);
+      } else {
+        const results = (json.results || []) as { action: string; bimestre: number; motivo?: string }[];
+        const persisted = results.filter(
+          (r) => r.action === "inserted" || r.action === "updated",
+        );
+        const skipped = results.filter((r) => r.action === "skipped");
+        const parts: string[] = [];
+        if (persisted.length > 0) {
+          parts.push(
+            `${persisted.length} bimestre(s) recalculado(s): ${persisted
+              .map((r) => `${r.bimestre}º`)
+              .join(", ")}.`,
+          );
+        }
+        if (skipped.length > 0 && skipped[0].motivo) {
+          parts.push(skipped[0].motivo);
+        }
+        setRecomputeMsg(parts.join(" "));
+        await fetchData();
+      }
+    } catch (err) {
+      setRecomputeMsg(`Erro: ${String(err)}`);
+    } finally {
+      setRecomputing(false);
+    }
+  }, [selectedAno, fetchData]);
 
   useEffect(() => {
     fetchData();
@@ -152,7 +194,28 @@ export default function IndicadoresPage() {
               </select>
             </div>
           )}
+          <div className="ml-auto self-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRecompute}
+              disabled={recomputing}
+            >
+              {recomputing ? (
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-3.5 w-3.5" />
+              )}
+              Recalcular Indicador
+            </Button>
+          </div>
         </div>
+
+        {recomputeMsg && (
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            {recomputeMsg}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center p-12">

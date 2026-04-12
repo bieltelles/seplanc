@@ -10,17 +10,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/saude/recompute?ano=YYYY[&bimestre=N|all]
- *
  * Recalcula o Anexo 12 (Saúde) a partir dos Balancetes internos já
  * importados no Turso (tabelas `receitas` e `despesas`).
+ *
+ * Aceita GET e POST para permitir disparo direto pelo navegador.
  *
  *   ano=2025              exercício (default: ano atual)
  *   bimestre=N            recalcula somente o bimestre N (default:
  *                         inferido do exercício)
  *   bimestre=all          recalcula os 6 bimestres
  */
-export async function POST(request: NextRequest) {
+async function handle(request: NextRequest) {
   try {
     await initializeSchema();
 
@@ -48,4 +48,12 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+export async function GET(request: NextRequest) {
+  return handle(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handle(request);
 }
