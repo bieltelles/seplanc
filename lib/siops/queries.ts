@@ -65,16 +65,10 @@ export async function upsertSiopsAnexo12(
   ];
 
   if (row) {
-    // Se a data de homologação é a mesma, não precisa atualizar
-    if (row.data_homologacao === data.dataHomologacao) {
-      return {
-        success: true,
-        action: "unchanged",
-        exercicioAno: data.exercicioAno,
-        bimestre: data.bimestre,
-        codIbge: data.codIbge,
-      };
-    }
+    // No fluxo novo (cálculo interno) os dados mudam sempre que há
+    // re-upload de Balancete, mesmo no mesmo dia. O short-circuit
+    // por `data_homologacao` herdado do scraping do SIOPS impedia a
+    // atualização de valores — removemos para sempre atualizar.
 
     await db.execute({
       sql: `UPDATE siops_anexo12 SET

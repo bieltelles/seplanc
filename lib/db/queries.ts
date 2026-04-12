@@ -47,6 +47,7 @@ export async function getExerciciosWithDetails() {
   const result = await db.execute(`
     SELECT e.ano, e.tipo, e.status, e.created_at,
       (SELECT COUNT(*) FROM receitas WHERE exercicio_ano = e.ano) as total_receitas,
+      (SELECT COUNT(*) FROM despesas WHERE exercicio_ano = e.ano) as total_despesas,
       (SELECT COUNT(DISTINCT bimestre) FROM rreo WHERE exercicio_ano = e.ano) as total_rreo_bimestres,
       (SELECT COUNT(DISTINCT quadrimestre || '-' || entidade) FROM rgf WHERE exercicio_ano = e.ano) as total_rgf_quadrimestres
     FROM exercicios e
@@ -74,6 +75,7 @@ export async function deleteExercicio(ano: number) {
       { sql: "DELETE FROM despesas WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM rreo WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM rgf WHERE exercicio_ano = ?", args: [ano] },
+      { sql: "DELETE FROM siops_anexo12 WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM uploads WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM exercicios WHERE ano = ?", args: [ano] },
     ],

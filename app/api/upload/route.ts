@@ -14,8 +14,8 @@ import {
   updateUploadStatus,
 } from "@/lib/db/queries";
 import {
-  computeAndUpsertAnexo12,
-  inferBimestreDoExercicio,
+  computeAllBimestres,
+  type ComputeAnexo12Result,
 } from "@/lib/saude/compute-anexo12";
 
 export async function POST(request: NextRequest) {
@@ -50,30 +50,24 @@ export async function POST(request: NextRequest) {
 
     try {
       let count = 0;
-      let recomputeResult: Awaited<ReturnType<typeof computeAndUpsertAnexo12>> | null =
-        null;
+      let recomputeAll: ComputeAnexo12Result[] | null = null;
 
       switch (detected.type) {
         case "receita_csv": {
           const rows = parseReceitaCsvFromBuffer(buffer);
           await upsertExercicio(detected.year, "receita");
           count = await insertReceitas(detected.year, rows);
-          // Recalcula automaticamente o Anexo 12 — se ainda não houver
-          // despesas para o ano, a função retorna `skipped` sem erro.
-          recomputeResult = await computeAndUpsertAnexo12(
-            detected.year,
-            inferBimestreDoExercicio(detected.year),
-          );
+          // Recalcula automaticamente todos os 6 bimestres do Anexo 12.
+          // Se ainda faltar receita/despesa em algum bimestre, retorna
+          // `skipped` com motivo — sem erro.
+          recomputeAll = await computeAllBimestres(detected.year);
           break;
         }
         case "despesa_csv": {
           const rows = parseDespesaCsvFromBuffer(buffer);
           await upsertExercicio(detected.year, "despesa");
           count = await insertDespesas(detected.year, rows);
-          recomputeResult = await computeAndUpsertAnexo12(
-            detected.year,
-            inferBimestreDoExercicio(detected.year),
-          );
+          recomputeAll = await computeAllBimestres(detected.year);
           break;
         }
         case "rreo_xls": {
@@ -98,6 +92,18 @@ export async function POST(request: NextRequest) {
 
       await updateUploadStatus(uploadId, "concluido", count);
 
+      // Resumo do Anexo 12 para a UI: escolhe o último bimestre
+      // efetivamente persistido (inserted/updated). Se nenhum foi
+      // persistido, retorna o primeiro skip para exibir o motivo.
+      let anexo12Summary: ComputeAnexo12Result | null = null;
+      if (recomputeAll && recomputeAll.length > 0) {
+        const persisted = recomputeAll.filter(
+          (r) => r.action === "inserted" || r.action === "updated",
+        );
+        anexo12Summary =
+          persisted[persisted.length - 1] ?? recomputeAll[0] ?? null;
+      }
+
       return NextResponse.json({
         success: true,
         message: `Arquivo processado com sucesso`,
@@ -108,7 +114,8 @@ export async function POST(request: NextRequest) {
           period: detected.period,
           entity: detected.entity,
           recordsInserted: count,
-          anexo12: recomputeResult,
+          anexo12: anexo12Summary,
+          anexo12All: recomputeAll,
         },
       });
     } catch (err) {

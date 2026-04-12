@@ -417,14 +417,18 @@ export async function computeAndUpsertAnexo12(
   const receitas = await computeReceitas(ano, bimestre);
   const despesas = await computeDespesas(ano);
 
-  // Se não há receita ou despesa detectada, não há o que persistir.
-  if (receitas.total === 0 && despesas.totais.empenhada === 0) {
+  // Sem receita base (III) não faz sentido computar % aplicado (ficaria
+  // 0% artificial mesmo que haja despesa). Pulamos com motivo claro para
+  // orientar o usuário a subir o Balancete de Receita antes.
+  if (receitas.total === 0) {
     return {
       action: "skipped",
       exercicioAno: ano,
       bimestre,
       motivo:
-        "Sem dados de receita ou despesa para o exercício. Importe os Balancetes.",
+        despesas.totais.empenhada > 0
+          ? `Balancete de Receita ${ano} ainda não importado — percentual não calculado. Importe ${ano}_BALANCETE_RECEITA_ANUAL.csv.`
+          : `Sem dados de Receita nem de Despesa para ${ano}. Importe os Balancetes.`,
     };
   }
 

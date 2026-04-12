@@ -14,6 +14,7 @@ interface ExercicioRow {
   status: string;
   created_at: string;
   total_receitas: number;
+  total_despesas: number;
   total_rreo_bimestres: number;
   total_rgf_quadrimestres: number;
 }
@@ -96,6 +97,7 @@ export default function ExerciciosPage() {
 
   const typeLabels: Record<string, string> = {
     receita: "Receitas",
+    despesa: "Despesas",
     rreo: "RREO",
     rgf: "RGF",
   };
@@ -161,6 +163,7 @@ export default function ExerciciosPage() {
               {sortedYears.map((ano) => {
                 const exs = byYear.get(ano) || [];
                 const receita = exs.find((e) => e.tipo === "receita");
+                const despesa = exs.find((e) => e.tipo === "despesa");
                 const rreo = exs.find((e) => e.tipo === "rreo");
                 const rgf = exs.find((e) => e.tipo === "rgf");
 
@@ -175,6 +178,11 @@ export default function ExerciciosPage() {
                           Receitas ({receita.total_receitas.toLocaleString("pt-BR")} registros)
                         </Badge>
                       )}
+                      {despesa && (
+                        <Badge variant="default" className="bg-rose-600 hover:bg-rose-700">
+                          Despesas ({despesa.total_despesas.toLocaleString("pt-BR")} registros)
+                        </Badge>
+                      )}
                       {rreo && (
                         <Badge variant="secondary">
                           RREO ({rreo.total_rreo_bimestres} bimestres)
@@ -185,7 +193,7 @@ export default function ExerciciosPage() {
                           RGF ({rgf.total_rgf_quadrimestres} períodos)
                         </Badge>
                       )}
-                      {!receita && !rreo && !rgf && (
+                      {!receita && !despesa && !rreo && !rgf && (
                         <Badge variant="outline">Sem dados</Badge>
                       )}
                     </div>
