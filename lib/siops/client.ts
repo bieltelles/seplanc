@@ -39,15 +39,30 @@ function decodeIso8859(buffer: ArrayBuffer): string {
 
 /**
  * Extrai cookies Set-Cookie de um Response e monta o header Cookie.
+ * Node.js fetch (undici) não inclui Set-Cookie em headers.forEach(),
+ * por isso usamos getSetCookie() quando disponível.
  */
 function extractCookies(response: Response): string {
   const cookies: string[] = [];
-  response.headers.forEach((value, key) => {
-    if (key.toLowerCase() === "set-cookie") {
-      const name = value.split(";")[0];
+
+  // Método moderno (Node.js 20+, undici)
+  if (typeof response.headers.getSetCookie === "function") {
+    for (const raw of response.headers.getSetCookie()) {
+      const name = raw.split(";")[0];
       if (name) cookies.push(name);
     }
-  });
+  }
+
+  // Fallback: tentar forEach (funciona em browsers e alguns runtimes)
+  if (cookies.length === 0) {
+    response.headers.forEach((value, key) => {
+      if (key.toLowerCase() === "set-cookie") {
+        const name = value.split(";")[0];
+        if (name) cookies.push(name);
+      }
+    });
+  }
+
   return cookies.join("; ");
 }
 
@@ -89,15 +104,14 @@ function validateSiopsHtml(html: string, expectedBimestre?: number): void {
 }
 
 /**
- * Estratégia 1: GET direto com query params.
- * Tenta duas URLs com nomes de parâmetro do formulário SIOPS.
+ * Estratégia 1: GET direto ao rel_LRF.php com query params.
+ * Funciona quando o servidor aceita GET sem sessão.
  */
 async function tryDirectGet(
   baseUrl: string,
   params: SiopsFetchParams,
 ): Promise<string> {
-  // Nomes de parâmetros iguais ao formulário do SIOPS (cmbUF, cmbPERIODO etc.)
-  const cmbParams = new URLSearchParams({
+  const qs = new URLSearchParams({
     cmbUF: String(params.uf),
     cmbMUNICIPIO: params.codMunicipio,
     cmbANO: String(params.ano),
@@ -106,46 +120,33 @@ async function tryDirectGet(
     btnConsultar: "Consultar",
   });
 
-  // Tenta duas URLs: consleirespfiscal.php (form principal) e rel_LRF.php
-  const urls = [
-    `${baseUrl}/consleirespfiscal.php?${cmbParams}`,
-    `${baseUrl}/rel_LRF.php?${cmbParams}`,
-  ];
+  const url = `${baseUrl}/rel_LRF.php?${qs}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  let lastError: Error | null = null;
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html,application/xhtml+xml,*/*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        Referer: `${baseUrl}/consleirespfiscal.php`,
+      },
+    });
 
-  for (const url of urls) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    try {
-      const res = await fetch(url, {
-        signal: controller.signal,
-        redirect: "follow",
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "text/html,application/xhtml+xml,*/*",
-          "Accept-Language": "pt-BR,pt;q=0.9",
-        },
-      });
-
-      const buffer = await res.arrayBuffer();
-      if (isPdf(buffer)) {
-        lastError = new Error("SIOPS retornou PDF via GET direto");
-        continue;
-      }
-
-      const html = decodeIso8859(buffer);
-      validateSiopsHtml(html, params.bimestre);
-      return html;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    } finally {
-      clearTimeout(timeout);
+    const buffer = await res.arrayBuffer();
+    if (isPdf(buffer)) {
+      throw new Error("SIOPS retornou PDF via GET direto");
     }
-  }
 
-  throw lastError || new Error("GET direto falhou");
+    const html = decodeIso8859(buffer);
+    validateSiopsHtml(html, params.bimestre);
+    return html;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
@@ -208,8 +209,10 @@ async function trySessionPost(
       headers: {
         "User-Agent": USER_AGENT,
         "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "text/html",
+        Accept: "text/html,application/xhtml+xml,*/*",
         "Accept-Language": "pt-BR,pt;q=0.9",
+        Referer: formUrl,
+        Origin: baseUrl,
         ...(cookies ? { Cookie: cookies } : {}),
       },
       body,
@@ -245,23 +248,23 @@ export async function fetchSiopsAnexo12Html(
 ): Promise<string> {
   const errors: string[] = [];
 
-  // Tenta GET direto (mais simples, menos chance de falha de sessão)
-  for (const base of BASES) {
-    try {
-      return await tryDirectGet(base, params);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`GET ${base}: ${msg}`);
-    }
-  }
-
-  // Tenta Sessão + POST (fluxo completo do formulário)
+  // Tenta Sessão + POST primeiro (fluxo correto do formulário)
   for (const base of BASES) {
     try {
       return await trySessionPost(base, params);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`POST ${base}: ${msg}`);
+    }
+  }
+
+  // Tenta GET direto como fallback
+  for (const base of BASES) {
+    try {
+      return await tryDirectGet(base, params);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`GET ${base}: ${msg}`);
     }
   }
 
