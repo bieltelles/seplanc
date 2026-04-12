@@ -8,6 +8,8 @@ import {
 } from "@/lib/db/queries";
 import { IPCA_FONTE_NOME, IPCA_FONTE_URL, BCB_IPCA_URL } from "@/lib/ipca/fetch-bcb";
 
+export const dynamic = "force-dynamic";
+
 const CONFIG_DEFAULTS: Record<string, { valor: string; descricao: string }> = {
   correcao_tipo_juros: {
     valor: "compostos",
