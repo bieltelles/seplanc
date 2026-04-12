@@ -233,12 +233,19 @@ async function probe(targetUrl: string, started: number) {
   const contentType = (headers["content-type"] || "").toLowerCase();
   const isHtml =
     contentType.includes("html") ||
-    contentType === "" ||
+    (contentType === "" && !looksLikePdf(buffer)) ||
     contentType.startsWith("text/");
+  const isPdf = contentType.includes("pdf") || looksLikePdf(buffer);
 
   let decoded: DecodeResult = { text: "", encoding: "n/a", reason: "not html" };
   if (isHtml) {
     decoded = smartDecode(buffer, contentType);
+  }
+
+  // Inspeção de PDF — SIOPS retorna PDF direto em vez de HTML
+  let pdfInfo: PdfInfo | null = null;
+  if (isPdf) {
+    pdfInfo = inspectPdf(buffer);
   }
 
   const html = decoded.text;
@@ -309,6 +316,139 @@ async function probe(targetUrl: string, started: number) {
     selects,
     tablesPreview,
     heuristics,
+    pdf: pdfInfo,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Inspeção de PDF (sem dependências externas)
+// ---------------------------------------------------------------------------
+
+function looksLikePdf(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < 5) return false;
+  const bytes = new Uint8Array(buffer, 0, 5);
+  // %PDF-
+  return (
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46 &&
+    bytes[4] === 0x2d
+  );
+}
+
+interface PdfInfo {
+  magic: string;
+  version: string | null;
+  hasEof: boolean;
+  byteLength: number;
+  base64: string;
+  base64Truncated: boolean;
+  extractedStrings: string[];
+  mentionsAnexo12: boolean;
+  mentionsSaude: boolean;
+  mentionsSaoLuis: boolean;
+  mentionsSemDados: boolean;
+  mentionsNaoTransmitido: boolean;
+  heuristicAnalysis: string;
+}
+
+function inspectPdf(buffer: ArrayBuffer): PdfInfo {
+  const bytes = new Uint8Array(buffer);
+  const raw = new TextDecoder("latin1").decode(bytes);
+
+  const magic = raw.slice(0, 8);
+  const versionMatch = /^%PDF-(\d+\.\d+)/.exec(magic);
+  const version = versionMatch?.[1] || null;
+  const hasEof = raw.includes("%%EOF");
+
+  // Extrai strings de texto visíveis dos content streams do PDF.
+  // PDFs usam tokens (texto) Tj/TJ dentro de BT...ET para texto.
+  // Aqui pegamos uma heurística simples: strings entre parênteses
+  // não-balanceados, que é onde o PDF normalmente guarda texto Tj.
+  const extractedSet = new Set<string>();
+  const stringRe = /\(((?:[^\\()]|\\[\\()nrtbf]|\\\d{1,3})*)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = stringRe.exec(raw)) !== null) {
+    let s = m[1];
+    // Unescape sequências PDF básicas
+    s = s.replace(/\\\(/g, "(").replace(/\\\)/g, ")").replace(/\\\\/g, "\\");
+    s = s.replace(/\\(\d{1,3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
+    s = s.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t");
+    const trimmed = s.trim();
+    if (trimmed.length >= 2 && /\S/.test(trimmed)) {
+      extractedSet.add(trimmed.slice(0, 200));
+    }
+  }
+  const extractedStrings = Array.from(extractedSet).slice(0, 200);
+
+  // Busca por hex strings <...> (também usadas em PDFs)
+  const hexRe = /<([0-9a-fA-F\s]+)>/g;
+  let h: RegExpExecArray | null;
+  let hexCount = 0;
+  while ((h = hexRe.exec(raw)) !== null && hexCount < 50) {
+    try {
+      const hex = h[1].replace(/\s+/g, "");
+      if (hex.length >= 4 && hex.length % 2 === 0) {
+        let decoded = "";
+        for (let i = 0; i < hex.length; i += 2) {
+          const code = parseInt(hex.substring(i, i + 2), 16);
+          if (code >= 32 && code < 127) decoded += String.fromCharCode(code);
+          else if (code !== 0) decoded += "?";
+        }
+        if (/[A-Za-z]{3}/.test(decoded)) {
+          extractedSet.add(decoded.trim().slice(0, 200));
+          hexCount++;
+        }
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  // Base64 — PDFs pequenos retornamos inteiros (até 60KB);
+  // acima disso só os primeiros 20KB.
+  const MAX_BASE64 = 60 * 1024;
+  const truncated = bytes.byteLength > MAX_BASE64;
+  const slice = truncated ? bytes.subarray(0, 20 * 1024) : bytes;
+  // Buffer.from funciona em Node runtime
+  const base64 = Buffer.from(slice).toString("base64");
+
+  const joined = extractedStrings.join(" ").toLowerCase();
+  const mentionsAnexo12 = /anexo\s*(12|xii)/i.test(joined);
+  const mentionsSaude = /sa[uú]de/i.test(joined);
+  const mentionsSaoLuis = /s[aã]o lu[ií]s/i.test(joined);
+  const mentionsSemDados =
+    /sem dados|n[aã]o h[aá] dados|n[aã]o encontrado|nenhum dado|sem informa/i.test(joined);
+  const mentionsNaoTransmitido =
+    /n[aã]o transmitido|n[aã]o homologa|n[aã]o publicado|prazo/i.test(joined);
+
+  let heuristicAnalysis = "";
+  if (bytes.byteLength < 2000) {
+    heuristicAnalysis =
+      "PDF muito pequeno (<2KB) — provavelmente página de erro, aviso ou 'dados indisponíveis'";
+  } else if (bytes.byteLength < 10000) {
+    heuristicAnalysis = "PDF pequeno (<10KB) — possivelmente aviso ou conteúdo mínimo";
+  } else if (bytes.byteLength < 50000) {
+    heuristicAnalysis = "PDF médio — pode ser conteúdo real do Anexo 12";
+  } else {
+    heuristicAnalysis = "PDF grande — provavelmente Anexo 12 completo";
+  }
+
+  return {
+    magic,
+    version,
+    hasEof,
+    byteLength: bytes.byteLength,
+    base64,
+    base64Truncated: truncated,
+    extractedStrings,
+    mentionsAnexo12,
+    mentionsSaude,
+    mentionsSaoLuis,
+    mentionsSemDados,
+    mentionsNaoTransmitido,
+    heuristicAnalysis,
   };
 }
 
@@ -321,7 +461,55 @@ export async function GET(request: NextRequest) {
   const ano = searchParams.get("ano") || "2025";
   const per = searchParams.get("per") || "6";
   const raw = searchParams.get("raw") === "1";
+  const multi = searchParams.get("multi") === "1";
   const override = searchParams.get("url");
+
+  // Modo "multi" — varre combinações de (ano, bimestre) para comparar
+  // tamanhos de PDF e detectar qual retorna conteúdo real vs. erro.
+  if (multi && !override) {
+    const combos: Array<{ ano: string; per: string }> = [
+      { ano: "2025", per: "6" },
+      { ano: "2025", per: "5" },
+      { ano: "2025", per: "4" },
+      { ano: "2024", per: "6" },
+      { ano: "2023", per: "6" },
+      { ano: "2022", per: "6" },
+      { ano: "2020", per: "6" },
+    ];
+    const results = await Promise.all(
+      combos.map(async (c) => {
+        const url = `${SIOPS_BASE}?cmbUF=${uf}&cmbMUNICIPIO=${mun}&cmbANO=${c.ano}&cmbPERIODO=${c.per}`;
+        try {
+          const r = await probe(url, Date.now());
+          return {
+            combo: c,
+            url,
+            status: r.response.status,
+            contentType: r.response.contentType,
+            byteLength: r.response.byteLength,
+            pdfVersion: r.pdf?.version || null,
+            pdfHeuristic: r.pdf?.heuristicAnalysis || null,
+            mentionsSaoLuis: r.pdf?.mentionsSaoLuis ?? null,
+            mentionsAnexo12: r.pdf?.mentionsAnexo12 ?? null,
+            mentionsSemDados: r.pdf?.mentionsSemDados ?? null,
+            firstStrings: r.pdf?.extractedStrings.slice(0, 15) ?? [],
+          };
+        } catch (err) {
+          return {
+            combo: c,
+            url,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }),
+    );
+    return NextResponse.json({
+      mode: "multi",
+      params: { uf, mun },
+      durationMs: Date.now() - started,
+      results,
+    });
+  }
 
   const qs = `?cmbUF=${uf}&cmbMUNICIPIO=${mun}&cmbANO=${ano}&cmbPERIODO=${per}`;
   const primaryUrl = override || `${SIOPS_BASE}${qs}`;
