@@ -1,16 +1,27 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, RefreshCw, Heart, Code } from "lucide-react";
+import { Upload, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+
+interface Anexo12Info {
+  action: "inserted" | "updated" | "unchanged" | "skipped";
+  exercicioAno: number;
+  bimestre: number;
+  motivo?: string;
+  receitaTotal?: number;
+  valorAplicadoLiquidada?: number;
+  percentualLiquidada?: number;
+}
 
 interface UploadResult {
   success: boolean;
   message?: string;
   error?: string;
+  filename?: string;
   details?: {
     type: string;
     label: string;
@@ -18,7 +29,18 @@ interface UploadResult {
     period: number | null;
     entity: string | null;
     recordsInserted: number;
+    anexo12?: Anexo12Info | null;
   };
+}
+
+function formatPct(v: number | undefined): string {
+  if (v == null) return "—";
+  // Trunca em 2 casas para casar com SIOPS
+  const t = Math.trunc(v * 100) / 100;
+  return t.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) + "%";
 }
 
 export default function UploadPage() {
@@ -110,8 +132,9 @@ export default function UploadPage() {
               </Button>
               <div className="mt-4 text-center text-xs text-muted-foreground">
                 <p>Formatos aceitos:</p>
-                <div className="mt-1 flex gap-2 justify-center">
+                <div className="mt-1 flex flex-wrap gap-2 justify-center">
                   <Badge variant="secondary">CSV - Balancete de Receita</Badge>
+                  <Badge variant="secondary">CSV - Balancete de Despesa Geral</Badge>
                   <Badge variant="secondary">XLS - RREO (SICONFI)</Badge>
                   <Badge variant="secondary">XLS - RGF (SICONFI)</Badge>
                 </div>
@@ -129,11 +152,18 @@ export default function UploadPage() {
             <CardTitle className="text-base">Padrão de Nomenclatura</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 gap-4 text-xs md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg bg-blue-50 p-3">
                 <p className="mb-1 font-semibold text-blue-800">Balancete de Receita</p>
                 <code className="text-blue-600">YYYY_BALANCETE_RECEITA_ANUAL.csv</code>
-                <p className="mt-1 text-blue-700">Ex: 2024_BALANCETE_RECEITA_ANUAL.csv</p>
+                <p className="mt-1 text-blue-700">Ex: 2025_BALANCETE_RECEITA_ANUAL.csv</p>
+              </div>
+              <div className="rounded-lg bg-rose-50 p-3">
+                <p className="mb-1 font-semibold text-rose-800">Balancete de Despesa</p>
+                <code className="text-rose-600">YYYY_BALANCETE_DESPESA_GERAL.csv</code>
+                <p className="mt-1 text-rose-700">
+                  Base para o indicador de Saúde (função 10, fonte 1500001002).
+                </p>
               </div>
               <div className="rounded-lg bg-green-50 p-3">
                 <p className="mb-1 font-semibold text-green-800">RREO</p>
@@ -148,12 +178,6 @@ export default function UploadPage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* SIOPS Anexo 12 — Saúde */}
-        <SiopsRefreshCard onResult={(r) => setResults((prev) => [r, ...prev])} />
-
-        {/* SIOPS Importação Manual de HTML */}
-        <SiopsHtmlImportCard onResult={(r) => setResults((prev) => [r, ...prev])} />
 
         {/* Results */}
         {results.length > 0 && (
@@ -176,14 +200,26 @@ export default function UploadPage() {
                       <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
                     )}
                     <div className="text-xs">
-                      {r.success && r.message ? (
+                      {r.success && r.message && !r.details ? (
                         <p className="font-medium text-green-800">{r.message}</p>
                       ) : r.success && r.details ? (
                         <>
                           <p className="font-medium text-green-800">{r.details.label}</p>
                           <p className="text-green-700">
-                            Exercício {r.details.year} - {r.details.recordsInserted.toLocaleString("pt-BR")} registros importados
+                            Exercício {r.details.year} — {r.details.recordsInserted.toLocaleString("pt-BR")} registros importados
                           </p>
+                          {r.details.anexo12 && r.details.anexo12.action !== "skipped" && (
+                            <p className="mt-1 text-emerald-700">
+                              Indicador de Saúde {r.details.anexo12.exercicioAno}/{r.details.anexo12.bimestre}º bim
+                              {" "}
+                              recalculado ({r.details.anexo12.action}): {formatPct(r.details.anexo12.percentualLiquidada)} aplicado em ASPS.
+                            </p>
+                          )}
+                          {r.details.anexo12 && r.details.anexo12.action === "skipped" && (
+                            <p className="mt-1 text-amber-700">
+                              {r.details.anexo12.motivo || "Indicador não recalculado."}
+                            </p>
+                          )}
                         </>
                       ) : (
                         <p className="text-red-800">{r.error || "Erro desconhecido"}</p>
@@ -197,229 +233,5 @@ export default function UploadPage() {
         )}
       </div>
     </div>
-  );
-}
-
-// ====================================================================
-// SIOPS Anexo 12 — Atualização forçada
-// ====================================================================
-
-function SiopsRefreshCard({
-  onResult,
-}: {
-  onResult: (r: UploadResult) => void;
-}) {
-  const currentYear = new Date().getFullYear();
-  const [ano, setAno] = useState(currentYear);
-  const [bimestre, setBimestre] = useState(1);
-  const [loading, setLoading] = useState(false);
-
-  async function handleRefresh() {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `/api/siops/refresh?ano=${ano}&bimestre=${bimestre}`,
-        { method: "POST" },
-      );
-      const json = await res.json();
-      if (res.ok && json.success) {
-        const resumo = json.resumo;
-        onResult({
-          success: true,
-          message: `SIOPS Anexo 12 — ${resumo?.municipio ?? "São Luís"} ${resumo?.ano ?? ano}/${resumo?.bimestre ?? bimestre}º bim: ${resumo?.percentualAplicado?.toFixed(2) ?? "?"}% aplicado em ASPS (${json.action})`,
-        });
-      } else {
-        onResult({
-          success: false,
-          error: json.error || "Falha ao buscar dados do SIOPS.",
-        });
-      }
-    } catch (err) {
-      onResult({
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Heart className="h-4 w-4 text-red-500" />
-          SIOPS Anexo 12 — Saúde (LC 141/2012)
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-slate-600">
-          Busca o Demonstrativo das Receitas e Despesas com Ações e Serviços
-          Públicos de Saúde (ASPS) diretamente do SIOPS/DATASUS para São
-          Luís/MA. Se a busca automática falhar, use a opção &quot;Importar HTML&quot; abaixo.
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium">Exercício</label>
-            <select
-              value={ano}
-              onChange={(e) => setAno(parseInt(e.target.value, 10))}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-            >
-              {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">Bimestre</label>
-            <select
-              value={bimestre}
-              onChange={(e) => setBimestre(parseInt(e.target.value, 10))}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-            >
-              {[1, 2, 3, 4, 5, 6].map((b) => (
-                <option key={b} value={b}>
-                  {b}º
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleRefresh}
-            disabled={loading}
-            className="bg-red-600 hover:bg-red-700"
-          >
-            <RefreshCw
-              className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-            />
-            {loading ? "Buscando..." : "Buscar Automaticamente"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ====================================================================
-// SIOPS Anexo 12 — Importação manual de HTML
-// ====================================================================
-
-function SiopsHtmlImportCard({
-  onResult,
-}: {
-  onResult: (r: UploadResult) => void;
-}) {
-  const [html, setHtml] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function handleImport() {
-    if (!html.trim()) return;
-    setLoading(true);
-    try {
-      const res = await fetch("/api/siops/import-html", {
-        method: "POST",
-        headers: { "Content-Type": "text/html" },
-        body: html,
-      });
-      const json = await res.json();
-      if (res.ok && json.success) {
-        const resumo = json.resumo;
-        onResult({
-          success: true,
-          message: `SIOPS HTML importado — ${resumo?.municipio ?? "São Luís"} ${resumo?.ano ?? "?"}/${resumo?.bimestre ?? "?"}º bim: ${resumo?.percentualAplicado?.toFixed(2) ?? "?"}% aplicado em ASPS (${json.action})`,
-        });
-        setHtml("");
-      } else {
-        onResult({
-          success: false,
-          error: json.error || "Falha ao processar HTML do SIOPS.",
-        });
-      }
-    } catch (err) {
-      onResult({
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const text = await file.text();
-    setHtml(text);
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Code className="h-4 w-4 text-blue-500" />
-          Importar HTML do SIOPS (manual)
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-xs text-slate-600">
-          Se a busca automática falhar, acesse{" "}
-          <a
-            href="http://siops.datasus.gov.br/consleirespfiscal.php"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-blue-600 underline"
-          >
-            siops.datasus.gov.br
-          </a>
-          , consulte o Anexo 12 do município desejado, e cole o HTML da página aqui
-          (Ctrl+A → Ctrl+C no código-fonte da página) ou selecione o arquivo HTML salvo.
-        </p>
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            accept=".html,.htm"
-            className="hidden"
-            id="siops-html-input"
-            onChange={handleFileSelect}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => document.getElementById("siops-html-input")?.click()}
-          >
-            <FileText className="mr-1.5 h-3.5 w-3.5" />
-            Selecionar arquivo HTML
-          </Button>
-          {html && (
-            <span className="text-xs text-green-600">
-              {(html.length / 1024).toFixed(0)} KB carregados
-            </span>
-          )}
-        </div>
-        <textarea
-          value={html}
-          onChange={(e) => setHtml(e.target.value)}
-          placeholder="Cole o HTML completo do demonstrativo SIOPS aqui..."
-          className="h-24 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs text-slate-700 placeholder:text-slate-400"
-        />
-        <Button
-          size="sm"
-          onClick={handleImport}
-          disabled={loading || !html.trim()}
-          className="bg-blue-600 hover:bg-blue-700"
-        >
-          {loading ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          {loading ? "Processando..." : "Importar HTML"}
-        </Button>
-      </CardContent>
-    </Card>
   );
 }

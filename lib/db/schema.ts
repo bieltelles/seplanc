@@ -60,6 +60,41 @@ export async function initializeSchema() {
     `CREATE INDEX IF NOT EXISTS idx_rreo_ano_bim ON rreo(exercicio_ano, bimestre)`,
     `CREATE INDEX IF NOT EXISTS idx_rreo_anexo ON rreo(anexo)`,
 
+    // Balancete de Despesa Geral — linhas analíticas com Dotacao completa
+    // (UO + FFSSSPPPPT + ação + natureza + fonte). Usada como base para o
+    // cálculo do Anexo 12 (Saúde, LC 141/2012): função=10 isola as despesas
+    // de saúde e fonte=1500001002 identifica as computadas no mínimo (XI).
+    `CREATE TABLE IF NOT EXISTS despesas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exercicio_ano INTEGER NOT NULL,
+      ficha INTEGER,
+      dotacao TEXT NOT NULL,
+      uo TEXT,
+      funcao TEXT,
+      subfuncao TEXT,
+      programa TEXT,
+      acao TEXT,
+      natureza_despesa TEXT,
+      fonte TEXT,
+      especificacao TEXT,
+      orcado REAL DEFAULT 0,
+      suplementado REAL DEFAULT 0,
+      anulado REAL DEFAULT 0,
+      contingenciado REAL DEFAULT 0,
+      empenhado_periodo REAL DEFAULT 0,
+      empenhado_acumulado REAL DEFAULT 0,
+      liquidado_periodo REAL DEFAULT 0,
+      liquidado_acumulado REAL DEFAULT 0,
+      pago_periodo REAL DEFAULT 0,
+      pago_acumulado REAL DEFAULT 0,
+      saldo_a_empenhar REAL DEFAULT 0,
+      saldo_a_pagar REAL DEFAULT 0
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_despesas_ano ON despesas(exercicio_ano)`,
+    `CREATE INDEX IF NOT EXISTS idx_despesas_funcao ON despesas(exercicio_ano, funcao)`,
+    `CREATE INDEX IF NOT EXISTS idx_despesas_fonte ON despesas(exercicio_ano, fonte)`,
+
     `CREATE TABLE IF NOT EXISTS rgf (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       exercicio_ano INTEGER NOT NULL,

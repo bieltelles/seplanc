@@ -1,17 +1,13 @@
 /**
- * Tipos para dados do SIOPS Anexo 12 — Demonstrativo das Receitas e Despesas
- * com Ações e Serviços Públicos de Saúde (ASPS).
+ * Tipos para o Anexo 12 — Demonstrativo das Receitas e Despesas com Ações
+ * e Serviços Públicos de Saúde (ASPS).
  *
  * Referência: LC 141/2012, Art. 35 — RREO Anexo XII (Saúde).
- * Fonte: http://siops.datasus.gov.br/rel_LRF.php
  *
- * O demonstrativo é bimestral e contém:
- * - Receitas de impostos + transferências constitucionais (base 15%)
- * - Despesas ASPS por subfunção (recursos próprios)
- * - Apuração do cumprimento do mínimo constitucional (15%)
- * - Receitas adicionais (transferências SUS, operações de crédito)
- * - Despesas não computadas no mínimo (custeadas com transferências)
- * - Despesas totais com saúde (próprios + transferidos)
+ * Os valores são calculados a partir dos Balancetes da Receita e da Despesa
+ * da prefeitura (tabelas `receitas` e `despesas` no Turso). A estrutura
+ * mantém o mesmo nome herdado do SIOPS para compatibilidade com a camada
+ * de persistência (`siops_anexo12`).
  */
 
 /** Dados de receita do demonstrativo. */
@@ -119,18 +115,6 @@ export interface SiopsAnexo12 {
   };
   /** Despesas totais consolidadas. */
   despesasTotais: SiopsDespesasTotais;
-}
-
-/** Parâmetros para busca no SIOPS. */
-export interface SiopsFetchParams {
-  /** Código UF (ex.: 21 para MA). */
-  uf: number;
-  /** Código IBGE do município (ex.: 211130 para São Luís). */
-  codMunicipio: string;
-  /** Exercício (ano). */
-  ano: number;
-  /** Bimestre (1-6). */
-  bimestre: number;
 }
 
 /** Resultado da persistência no banco. */

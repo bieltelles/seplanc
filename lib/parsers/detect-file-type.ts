@@ -1,4 +1,9 @@
-export type FileType = "receita_csv" | "rreo_xls" | "rgf_xls" | "unknown";
+export type FileType =
+  | "receita_csv"
+  | "despesa_csv"
+  | "rreo_xls"
+  | "rgf_xls"
+  | "unknown";
 
 export interface DetectedFile {
   type: FileType;
@@ -23,6 +28,24 @@ export function detectFileType(filename: string): DetectedFile {
       period: null,
       entity: null,
       label: "Balancete de Receita Anual",
+    };
+  }
+
+  // Balancete de Despesa Geral CSV — estrutura analítica com
+  // Dotacao (UO.FUNCAO+SUBFUNCAO.PROGRAMA.ACAO.C.G.MOD.ELEM.FONTE)
+  // usada para calcular o Anexo 12 (Saúde) a partir de função=10.
+  if (
+    upper.includes("BALANCETE") &&
+    upper.includes("DESPESA") &&
+    upper.includes("GERAL")
+  ) {
+    const yearMatch = filename.match(/(\d{4})/);
+    return {
+      type: "despesa_csv",
+      year: yearMatch ? parseInt(yearMatch[1]) : null,
+      period: null,
+      entity: null,
+      label: "Balancete de Despesa Geral",
     };
   }
 

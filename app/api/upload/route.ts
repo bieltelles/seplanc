@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { detectFileType } from "@/lib/parsers/detect-file-type";
 import { parseReceitaCsvFromBuffer } from "@/lib/parsers/csv-receitas";
+import { parseDespesaCsvFromBuffer } from "@/lib/parsers/csv-despesas";
 import { parseRreoXlsFromBuffer } from "@/lib/parsers/xls-rreo";
 import { parseRgfXlsFromBuffer } from "@/lib/parsers/xls-rgf";
-import { upsertExercicio, insertReceitas, insertRreo, insertRgf, recordUpload, updateUploadStatus } from "@/lib/db/queries";
+import {
+  upsertExercicio,
+  insertReceitas,
+  insertDespesas,
+  insertRreo,
+  insertRgf,
+  recordUpload,
+  updateUploadStatus,
+} from "@/lib/db/queries";
+import {
+  computeAndUpsertAnexo12,
+  inferBimestreDoExercicio,
+} from "@/lib/saude/compute-anexo12";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,9 +30,13 @@ export async function POST(request: NextRequest) {
     const detected = detectFileType(file.name);
 
     if (detected.type === "unknown") {
-      return NextResponse.json({
-        error: "Tipo de arquivo não reconhecido. Envie um CSV de Balancete de Receita ou XLS de RREO/RGF.",
-      }, { status: 400 });
+      return NextResponse.json(
+        {
+          error:
+            "Tipo de arquivo não reconhecido. Envie um CSV de Balancete de Receita/Despesa ou XLS de RREO/RGF.",
+        },
+        { status: 400 },
+      );
     }
 
     if (!detected.year) {
@@ -33,12 +50,30 @@ export async function POST(request: NextRequest) {
 
     try {
       let count = 0;
+      let recomputeResult: Awaited<ReturnType<typeof computeAndUpsertAnexo12>> | null =
+        null;
 
       switch (detected.type) {
         case "receita_csv": {
           const rows = parseReceitaCsvFromBuffer(buffer);
           await upsertExercicio(detected.year, "receita");
           count = await insertReceitas(detected.year, rows);
+          // Recalcula automaticamente o Anexo 12 — se ainda não houver
+          // despesas para o ano, a função retorna `skipped` sem erro.
+          recomputeResult = await computeAndUpsertAnexo12(
+            detected.year,
+            inferBimestreDoExercicio(detected.year),
+          );
+          break;
+        }
+        case "despesa_csv": {
+          const rows = parseDespesaCsvFromBuffer(buffer);
+          await upsertExercicio(detected.year, "despesa");
+          count = await insertDespesas(detected.year, rows);
+          recomputeResult = await computeAndUpsertAnexo12(
+            detected.year,
+            inferBimestreDoExercicio(detected.year),
+          );
           break;
         }
         case "rreo_xls": {
@@ -73,6 +108,7 @@ export async function POST(request: NextRequest) {
           period: detected.period,
           entity: detected.entity,
           recordsInserted: count,
+          anexo12: recomputeResult,
         },
       });
     } catch (err) {

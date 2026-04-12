@@ -4,6 +4,7 @@ import { initializeSchema } from "./schema";
 import type { ReceitaRow } from "@/lib/parsers/csv-receitas";
 import type { RreoRow } from "@/lib/parsers/xls-rreo";
 import type { RgfRow } from "@/lib/parsers/xls-rgf";
+import type { DespesaRow } from "@/lib/parsers/csv-despesas";
 import type { CorrectionContext } from "@/lib/ipca/context";
 import {
   classifyDeducaoSubtipo,
@@ -70,6 +71,7 @@ export async function deleteExercicio(ano: number) {
   await db.batch(
     [
       { sql: "DELETE FROM receitas WHERE exercicio_ano = ?", args: [ano] },
+      { sql: "DELETE FROM despesas WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM rreo WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM rgf WHERE exercicio_ano = ?", args: [ano] },
       { sql: "DELETE FROM uploads WHERE exercicio_ano = ?", args: [ano] },
@@ -872,6 +874,135 @@ export async function getRgfQuadrimestresDisponiveis(ano: number) {
     args: [ano],
   });
   return result.rows as unknown as { quadrimestre: number; entidade: string }[];
+}
+
+/**
+ * Retorna apenas as linhas-folha de receitas (aquelas com campo `fonte`
+ * preenchido — o CSV sinaliza agregadas via `is_header`/fonte vazia).
+ * Usado pelo calculador do Anexo 12 para evitar double-counting.
+ */
+export async function getReceitasFolhasByYear(ano: number) {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT classificacao, acumulado,
+                 janeiro, fevereiro, marco, abril, maio, junho,
+                 julho, agosto, setembro, outubro, novembro, dezembro
+          FROM receitas
+          WHERE exercicio_ano = ?
+            AND is_header = 0
+            AND fonte IS NOT NULL
+            AND fonte <> ''`,
+    args: [ano],
+  });
+  return result.rows as unknown as {
+    classificacao: string;
+    acumulado: number;
+    janeiro: number;
+    fevereiro: number;
+    marco: number;
+    abril: number;
+    maio: number;
+    junho: number;
+    julho: number;
+    agosto: number;
+    setembro: number;
+    outubro: number;
+    novembro: number;
+    dezembro: number;
+  }[];
+}
+
+// ===== Despesas =====
+
+export async function insertDespesas(ano: number, rows: DespesaRow[]) {
+  await ensureSchema();
+  const db = getDb();
+
+  await db.execute({
+    sql: "DELETE FROM despesas WHERE exercicio_ano = ?",
+    args: [ano],
+  });
+
+  for (let i = 0; i < rows.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_CHUNK_SIZE);
+    await db.batch(
+      chunk.map((r) => ({
+        sql: `INSERT INTO despesas (
+          exercicio_ano, ficha, dotacao, uo, funcao, subfuncao, programa,
+          acao, natureza_despesa, fonte, especificacao,
+          orcado, suplementado, anulado, contingenciado,
+          empenhado_periodo, empenhado_acumulado,
+          liquidado_periodo, liquidado_acumulado,
+          pago_periodo, pago_acumulado,
+          saldo_a_empenhar, saldo_a_pagar
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          ano,
+          r.ficha,
+          r.dotacao,
+          r.uo,
+          r.funcao,
+          r.subfuncao,
+          r.programa,
+          r.acao,
+          r.naturezaDespesa,
+          r.fonte,
+          r.especificacao,
+          r.orcado,
+          r.suplementado,
+          r.anulado,
+          r.contingenciado,
+          r.empenhadoPeriodo,
+          r.empenhadoAcumulado,
+          r.liquidadoPeriodo,
+          r.liquidadoAcumulado,
+          r.pagoPeriodo,
+          r.pagoAcumulado,
+          r.saldoAEmpenhar,
+          r.saldoAPagar,
+        ],
+      })),
+      "write",
+    );
+  }
+
+  return rows.length;
+}
+
+/**
+ * Retorna todas as linhas analíticas de despesas de Saúde (função = 10) do
+ * exercício informado. Usado pelo calculador do Anexo 12.
+ */
+export async function getDespesasSaudeByYear(ano: number) {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute({
+    sql: `SELECT subfuncao, fonte,
+                 empenhado_acumulado, liquidado_acumulado, pago_acumulado
+          FROM despesas
+          WHERE exercicio_ano = ? AND funcao = '10'`,
+    args: [ano],
+  });
+  return result.rows as unknown as {
+    subfuncao: string;
+    fonte: string;
+    empenhado_acumulado: number;
+    liquidado_acumulado: number;
+    pago_acumulado: number;
+  }[];
+}
+
+/** Conta quantas linhas existem na tabela despesas para um exercício. */
+export async function countDespesas(ano: number): Promise<number> {
+  await ensureSchema();
+  const db = getDb();
+  const result = await db.execute({
+    sql: "SELECT COUNT(*) AS n FROM despesas WHERE exercicio_ano = ?",
+    args: [ano],
+  });
+  const row = result.rows[0] as unknown as { n: number } | undefined;
+  return Number(row?.n ?? 0);
 }
 
 // ===== Uploads =====

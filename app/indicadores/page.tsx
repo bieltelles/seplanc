@@ -73,7 +73,10 @@ function formatCurrency(value: number): string {
 }
 
 function formatPercent(value: number): string {
-  return value.toLocaleString("pt-BR", {
+  // Trunca em 2 casas (sem arredondar) para bater com o SIOPS.
+  // Ex.: 22,699% → "22,69%" (toLocaleString arredondaria para "22,70%").
+  const t = Math.trunc(value * 100) / 100;
+  return t.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }) + "%";
@@ -187,7 +190,7 @@ function EmptyState({ message }: { message?: string }) {
         <Activity className="mb-4 h-12 w-12 text-slate-300" />
         <p className="mb-2 text-base font-medium text-slate-600">Sem dados disponíveis</p>
         <p className="max-w-md text-center text-sm text-slate-500">
-          {message || "Importe dados do SIOPS na página de Upload para visualizar os indicadores de saúde."}
+          {message || "Importe o Balancete de Receita e o Balancete de Despesa Geral na página de Upload para calcular os indicadores de Saúde."}
         </p>
       </CardContent>
     </Card>
