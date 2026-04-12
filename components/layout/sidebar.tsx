@@ -12,6 +12,7 @@ import {
   Upload,
   FolderOpen,
   Settings,
+  Activity,
 } from "lucide-react";
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: "/rreo", label: "RREO", icon: FileText },
   { href: "/rgf", label: "RGF", icon: ShieldCheck },
   { href: "/audiencias", label: "Audiências", icon: Presentation },
+  { href: "/indicadores", label: "Indicadores", icon: Activity },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/exercicios", label: "Exercícios", icon: FolderOpen },
   { href: "/configuracoes", label: "Configurações", icon: Settings },

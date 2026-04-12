@@ -1,25 +1,28 @@
 /**
- * Cliente HTTP para o SIOPS (http://siops.datasus.gov.br).
+ * Cliente HTTP para o SIOPS (siops.datasus.gov.br).
  *
- * O fluxo de consulta do Anexo 12 é:
- * 1. GET consleirespfiscal.php — retorna o formulário com selects de UF/Município/Ano/Bimestre.
- * 2. POST consleirespfiscal.php (ou rel_LRF.php) — submete os parâmetros e retorna o HTML.
+ * Estratégia de consulta do Anexo 12:
  *
- * O servidor usa sessões PHP (PHPSESSID). O fluxo precisa:
- * - Preservar cookies entre requests.
- * - Enviar Content-Type: application/x-www-form-urlencoded.
- * - Decodificar ISO-8859-15 → UTF-8.
+ * 1ª tentativa — Sessão + POST:
+ *    GET consleirespfiscal.php → extrai PHPSESSID
+ *    POST com cookies → HTML do demonstrativo
  *
- * Quando os parâmetros são incorretos, retorna um PDF com
- * "PASSAGEM DE PARÂMETROS INCORRETA" em vez de HTML.
+ * 2ª tentativa — GET direto com query params:
+ *    GET rel_LRF.php?S=1&UF=...&Municipio=...&Ano=...&Periodo=...
+ *
+ * Ambas são tentadas em HTTPS primeiro, depois HTTP como fallback.
+ * O servidor usa sessões PHP e encoding ISO-8859-15.
  */
 
 import type { SiopsFetchParams } from "./types";
 
-const BASE_URL = "http://siops.datasus.gov.br";
-const FORM_URL = `${BASE_URL}/consleirespfiscal.php`;
-const REPORT_URL = `${BASE_URL}/rel_LRF.php`;
-const TIMEOUT_MS = 30_000;
+const BASES = [
+  "https://siops.datasus.gov.br",
+  "http://siops.datasus.gov.br",
+];
+const TIMEOUT_MS = 20_000;
+const USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /**
  * Decodifica ArrayBuffer de ISO-8859-1/15 para string UTF-8.
@@ -27,8 +30,6 @@ const TIMEOUT_MS = 30_000;
  */
 function decodeIso8859(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  // TextDecoder com iso-8859-15 pode não estar disponível em todos os runtimes;
-  // fallback para iso-8859-1 que cobre 99% dos caracteres do SIOPS.
   try {
     return new TextDecoder("iso-8859-15").decode(bytes);
   } catch {
@@ -50,132 +51,6 @@ function extractCookies(response: Response): string {
   return cookies.join("; ");
 }
 
-/**
- * Tenta descobrir os nomes dos campos do formulário fazendo GET na página do form.
- * Retorna os cookies da sessão PHP.
- */
-async function initSession(): Promise<{ cookies: string; formAction: string }> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    const res = await fetch(FORM_URL, {
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": "SEMFAZ-Dashboard/1.0",
-        Accept: "text/html",
-      },
-    });
-    const cookies = extractCookies(res);
-
-    // Tentar extrair o form action do HTML
-    const buffer = await res.arrayBuffer();
-    const html = decodeIso8859(buffer);
-
-    const actionMatch = html.match(/<form[^>]*action="([^"]+)"/i);
-    const formAction = actionMatch
-      ? actionMatch[1].startsWith("http")
-        ? actionMatch[1]
-        : `${BASE_URL}/${actionMatch[1].replace(/^\//, "")}`
-      : REPORT_URL;
-
-    return { cookies, formAction };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
- * Monta o body do POST com os parâmetros de consulta.
- * Os nomes dos campos são baseados no formulário do SIOPS (consleirespfiscal.php).
- *
- * Nomes conhecidos (podem variar):
- * - cmbUF / cmbMUNICIPIO / cmbANO / cmbPERIODO (schema 2012)
- * - Alternativas: uf / municipio / ano / periodo
- *
- * Tentamos ambos os formatos e o servidor aceita o que reconhecer.
- */
-function buildFormBody(params: SiopsFetchParams): string {
-  const fields: Record<string, string> = {
-    // Schema clássico (SIOPS 2012+)
-    cmbUF: String(params.uf),
-    cmbMUNICIPIO: params.codMunicipio,
-    cmbANO: String(params.ano),
-    cmbPERIODO: String(params.bimestre),
-    // Alternativas que podem ser necessárias
-    opcao: "1", // 1 = município
-    btnConsultar: "Consultar",
-  };
-
-  return Object.entries(fields)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join("&");
-}
-
-/**
- * Busca o Anexo 12 do SIOPS para um município/ano/bimestre.
- *
- * @returns HTML do demonstrativo (já decodificado para UTF-8).
- * @throws Se o servidor retornar erro, PDF, ou timeout.
- */
-export async function fetchSiopsAnexo12Html(
-  params: SiopsFetchParams,
-): Promise<string> {
-  // 1. Inicia sessão e obtém cookies
-  const { cookies, formAction } = await initSession();
-
-  // 2. POST com parâmetros
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    const body = buildFormBody(params);
-    const res = await fetch(formAction, {
-      method: "POST",
-      signal: controller.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": "SEMFAZ-Dashboard/1.0",
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "text/html",
-        ...(cookies ? { Cookie: cookies } : {}),
-      },
-      body,
-    });
-
-    const contentType = res.headers.get("content-type") || "";
-    const buffer = await res.arrayBuffer();
-
-    // Se retornou PDF → parâmetros incorretos
-    if (
-      contentType.includes("application/pdf") ||
-      isPdf(buffer)
-    ) {
-      throw new Error(
-        `SIOPS retornou PDF (parâmetros incorretos): UF=${params.uf} MUN=${params.codMunicipio} ANO=${params.ano} BIM=${params.bimestre}`,
-      );
-    }
-
-    const html = decodeIso8859(buffer);
-
-    // Validação básica: deve conter tabela de receitas
-    if (!html.includes("RECEITA DE IMPOSTOS") && !html.includes("RECEITAS RESULTANTES")) {
-      // Pode ser página de erro ou formulário novamente
-      if (html.includes("PASSAGEM DE PAR")) {
-        throw new Error("SIOPS: PASSAGEM DE PARÂMETROS INCORRETA");
-      }
-      throw new Error(
-        `SIOPS retornou HTML sem dados do Anexo 12. Content-Length: ${buffer.byteLength}`,
-      );
-    }
-
-    return html;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 /** Checa se um buffer começa com %PDF- */
 function isPdf(buffer: ArrayBuffer): boolean {
   if (buffer.byteLength < 5) return false;
@@ -186,6 +61,186 @@ function isPdf(buffer: ArrayBuffer): boolean {
     bytes[2] === 0x44 && // D
     bytes[3] === 0x46 && // F
     bytes[4] === 0x2d    // -
+  );
+}
+
+/** Valida que o HTML contém dados do Anexo 12 */
+function validateSiopsHtml(html: string): void {
+  if (html.includes("RECEITA DE IMPOSTOS") || html.includes("RECEITAS RESULTANTES")) {
+    return; // OK
+  }
+  if (html.includes("PASSAGEM DE PAR")) {
+    throw new Error("SIOPS: PASSAGEM DE PARÂMETROS INCORRETA");
+  }
+  throw new Error("SIOPS retornou HTML sem dados do Anexo 12");
+}
+
+/**
+ * Estratégia 1: GET direto com query params ao rel_LRF.php.
+ * Não precisa de sessão — funciona quando o servidor aceita GET direto.
+ */
+async function tryDirectGet(
+  baseUrl: string,
+  params: SiopsFetchParams,
+): Promise<string> {
+  const qs = new URLSearchParams({
+    S: "1",
+    UF: String(params.uf),
+    Municipio: params.codMunicipio,
+    Ano: String(params.ano),
+    Periodo: String(params.bimestre),
+    Opcao: "1",
+  });
+
+  const url = `${baseUrl}/rel_LRF.php?${qs}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html,application/xhtml+xml,*/*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+    });
+
+    const buffer = await res.arrayBuffer();
+    if (isPdf(buffer)) {
+      throw new Error("SIOPS retornou PDF via GET direto");
+    }
+
+    const html = decodeIso8859(buffer);
+    validateSiopsHtml(html);
+    return html;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Estratégia 2: Sessão PHP + POST (fluxo original do formulário).
+ */
+async function trySessionPost(
+  baseUrl: string,
+  params: SiopsFetchParams,
+): Promise<string> {
+  const formUrl = `${baseUrl}/consleirespfiscal.php`;
+  const reportUrl = `${baseUrl}/rel_LRF.php`;
+
+  // Passo 1: GET na página do formulário → cookies
+  const controller1 = new AbortController();
+  const t1 = setTimeout(() => controller1.abort(), TIMEOUT_MS);
+  let cookies: string;
+  let formAction: string;
+
+  try {
+    const res = await fetch(formUrl, {
+      signal: controller1.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+    });
+    cookies = extractCookies(res);
+    const buffer = await res.arrayBuffer();
+    const html = decodeIso8859(buffer);
+    const actionMatch = html.match(/<form[^>]*action="([^"]+)"/i);
+    formAction = actionMatch
+      ? actionMatch[1].startsWith("http")
+        ? actionMatch[1]
+        : `${baseUrl}/${actionMatch[1].replace(/^\//, "")}`
+      : reportUrl;
+  } finally {
+    clearTimeout(t1);
+  }
+
+  // Passo 2: POST com parâmetros + cookies
+  const body = [
+    `cmbUF=${params.uf}`,
+    `cmbMUNICIPIO=${encodeURIComponent(params.codMunicipio)}`,
+    `cmbANO=${params.ano}`,
+    `cmbPERIODO=${params.bimestre}`,
+    `opcao=1`,
+    `btnConsultar=Consultar`,
+  ].join("&");
+
+  const controller2 = new AbortController();
+  const t2 = setTimeout(() => controller2.abort(), TIMEOUT_MS);
+
+  try {
+    const res = await fetch(formAction, {
+      method: "POST",
+      signal: controller2.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "text/html",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        ...(cookies ? { Cookie: cookies } : {}),
+      },
+      body,
+    });
+
+    const buffer = await res.arrayBuffer();
+    if (isPdf(buffer)) {
+      throw new Error("SIOPS retornou PDF (parâmetros incorretos)");
+    }
+
+    const html = decodeIso8859(buffer);
+    validateSiopsHtml(html);
+    return html;
+  } finally {
+    clearTimeout(t2);
+  }
+}
+
+/**
+ * Busca o Anexo 12 do SIOPS para um município/ano/bimestre.
+ *
+ * Tenta múltiplas estratégias em sequência:
+ * 1. GET direto (HTTPS)
+ * 2. GET direto (HTTP)
+ * 3. Sessão+POST (HTTPS)
+ * 4. Sessão+POST (HTTP)
+ *
+ * @returns HTML do demonstrativo (já decodificado para UTF-8).
+ * @throws Se todas as tentativas falharem.
+ */
+export async function fetchSiopsAnexo12Html(
+  params: SiopsFetchParams,
+): Promise<string> {
+  const errors: string[] = [];
+
+  // Tenta GET direto (mais simples, menos chance de falha de sessão)
+  for (const base of BASES) {
+    try {
+      return await tryDirectGet(base, params);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`GET ${base}: ${msg}`);
+    }
+  }
+
+  // Tenta Sessão + POST (fluxo completo do formulário)
+  for (const base of BASES) {
+    try {
+      return await trySessionPost(base, params);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`POST ${base}: ${msg}`);
+    }
+  }
+
+  throw new Error(
+    `Não foi possível acessar o SIOPS após 4 tentativas. ` +
+    `Use a opção "Importar HTML" na página de Upload para importar manualmente. ` +
+    `Detalhes: ${errors.join(" | ")}`,
   );
 }
 

@@ -5,7 +5,7 @@ import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, RefreshCw, Heart } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, RefreshCw, Heart, Code } from "lucide-react";
 
 interface UploadResult {
   success: boolean;
@@ -152,6 +152,9 @@ export default function UploadPage() {
         {/* SIOPS Anexo 12 — Saúde */}
         <SiopsRefreshCard onResult={(r) => setResults((prev) => [r, ...prev])} />
 
+        {/* SIOPS Importação Manual de HTML */}
+        <SiopsHtmlImportCard onResult={(r) => setResults((prev) => [r, ...prev])} />
+
         {/* Results */}
         {results.length > 0 && (
           <Card>
@@ -253,7 +256,7 @@ function SiopsRefreshCard({
         <p className="text-xs text-slate-600">
           Busca o Demonstrativo das Receitas e Despesas com Ações e Serviços
           Públicos de Saúde (ASPS) diretamente do SIOPS/DATASUS para São
-          Luís/MA. Os dados são atualizados automaticamente todo dia 1 via cron.
+          Luís/MA. Se a busca automática falhar, use a opção &quot;Importar HTML&quot; abaixo.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -293,9 +296,129 @@ function SiopsRefreshCard({
             <RefreshCw
               className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
             />
-            {loading ? "Buscando..." : "Atualizar SIOPS"}
+            {loading ? "Buscando..." : "Buscar Automaticamente"}
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ====================================================================
+// SIOPS Anexo 12 — Importação manual de HTML
+// ====================================================================
+
+function SiopsHtmlImportCard({
+  onResult,
+}: {
+  onResult: (r: UploadResult) => void;
+}) {
+  const [html, setHtml] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleImport() {
+    if (!html.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/siops/import-html", {
+        method: "POST",
+        headers: { "Content-Type": "text/html" },
+        body: html,
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        const resumo = json.resumo;
+        onResult({
+          success: true,
+          message: `SIOPS HTML importado — ${resumo?.municipio ?? "São Luís"} ${resumo?.ano ?? "?"}/${resumo?.bimestre ?? "?"}º bim: ${resumo?.percentualAplicado?.toFixed(2) ?? "?"}% aplicado em ASPS (${json.action})`,
+        });
+        setHtml("");
+      } else {
+        onResult({
+          success: false,
+          error: json.error || "Falha ao processar HTML do SIOPS.",
+        });
+      }
+    } catch (err) {
+      onResult({
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setHtml(text);
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Code className="h-4 w-4 text-blue-500" />
+          Importar HTML do SIOPS (manual)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-slate-600">
+          Se a busca automática falhar, acesse{" "}
+          <a
+            href="http://siops.datasus.gov.br/consleirespfiscal.php"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-blue-600 underline"
+          >
+            siops.datasus.gov.br
+          </a>
+          , consulte o Anexo 12 do município desejado, e cole o HTML da página aqui
+          (Ctrl+A → Ctrl+C no código-fonte da página) ou selecione o arquivo HTML salvo.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            accept=".html,.htm"
+            className="hidden"
+            id="siops-html-input"
+            onChange={handleFileSelect}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => document.getElementById("siops-html-input")?.click()}
+          >
+            <FileText className="mr-1.5 h-3.5 w-3.5" />
+            Selecionar arquivo HTML
+          </Button>
+          {html && (
+            <span className="text-xs text-green-600">
+              {(html.length / 1024).toFixed(0)} KB carregados
+            </span>
+          )}
+        </div>
+        <textarea
+          value={html}
+          onChange={(e) => setHtml(e.target.value)}
+          placeholder="Cole o HTML completo do demonstrativo SIOPS aqui..."
+          className="h-24 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-xs text-slate-700 placeholder:text-slate-400"
+        />
+        <Button
+          size="sm"
+          onClick={handleImport}
+          disabled={loading || !html.trim()}
+          className="bg-blue-600 hover:bg-blue-700"
+        >
+          {loading ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Upload className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          {loading ? "Processando..." : "Importar HTML"}
+        </Button>
       </CardContent>
     </Card>
   );
